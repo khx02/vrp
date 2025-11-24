@@ -3,7 +3,6 @@ use reqwest::Client;
 // Standard library imports
 use serde_json::Value;
 
-
 // 1. OSRM Distance Matrix Function
 pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
     if coords.is_empty() {
@@ -26,7 +25,8 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
     println!("create_dm_osrm: sending GET to {url}");
 
     // Make the request
-    let response = match client.get(&url)
+    let response = match client
+        .get(&url)
         .header("User-Agent", "VRP/1.0 (denzylcs@gmail.com)")
         .send()
         .await
@@ -88,12 +88,9 @@ pub async fn convert_to_coords(locations: Vec<String>) -> Vec<(f64, f64)> {
     coords
 }
 
-/// Attempt to fetch latitude/longitude for a Singapore postal code using 
+/// Attempt to fetch latitude/longitude for a Singapore postal code using
 /// OneMap's Search API. You must already have a valid access token.
-async fn get_coordinates_from_postal(
-    postal_code: &str,
-    access_token: &str,
-) -> Option<(f64, f64)> {
+async fn get_coordinates_from_postal(postal_code: &str, access_token: &str) -> Option<(f64, f64)> {
     // 1. Construct the OneMap "Search" endpoint with postal code
     // Example: https://www.onemap.gov.sg/api/common/elastic/search?searchVal=200640&returnGeom=Y&getAddrDetails=Y&pageNum=1
     let url = format!(
@@ -161,5 +158,3 @@ async fn get_coordinates_from_postal(
 
     Some((lat, lon))
 }
-
-

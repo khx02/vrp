@@ -1,4 +1,7 @@
-use crate::{core_logic::{Location, ProblemInstance}, Route};
+use crate::{
+    core_logic::{Location, ProblemInstance},
+    Route,
+};
 
 // new all
 pub fn find_fitness(
@@ -81,7 +84,6 @@ pub fn find_sorted_capacities(solution: &Route, num_of_trucks: &usize) -> Vec<u6
     trucks_capacities
 }
 
-
 pub fn dist_between(from_loc: usize, to_loc: usize, dm: &[Vec<f64>]) -> f64 {
     dm[from_loc][to_loc]
 }
@@ -91,23 +93,35 @@ pub struct Truck {
     pub capacity: u64,
     pub excess: i64,
     pub ending_warehouse: Option<usize>,
-    pub route: Vec<Location>
+    pub route: Vec<Location>,
 }
 
 pub fn find_sorted_capacities2(solution: &Route, num_of_trucks: &usize) -> Vec<Truck> {
     let mut trucks: Vec<Truck> = vec![];
     let r = &solution.route;
 
-    let mut temp_truck: Truck = Truck{load: 0, capacity: 0, excess: 0, ending_warehouse: None, route: vec![]};
+    let mut temp_truck: Truck = Truck {
+        load: 0,
+        capacity: 0,
+        excess: 0,
+        ending_warehouse: None,
+        route: vec![],
+    };
     for loc in r.iter() {
-        if loc.index >= (*num_of_trucks - 1) {  // is not a warehouse
+        if loc.index >= (*num_of_trucks - 1) {
+            // is not a warehouse
             temp_truck.load += loc.demand;
             temp_truck.route.push(loc.clone());
         } else {
             temp_truck.ending_warehouse = Some(loc.index);
             trucks.push(temp_truck);
-            temp_truck = Truck{load: 0, capacity: 0, excess: 0, ending_warehouse: None, route: vec![]};
-        
+            temp_truck = Truck {
+                load: 0,
+                capacity: 0,
+                excess: 0,
+                ending_warehouse: None,
+                route: vec![],
+            };
         }
     }
 
@@ -120,10 +134,9 @@ pub fn find_sorted_capacities2(solution: &Route, num_of_trucks: &usize) -> Vec<T
     trucks
 }
 
-
-pub fn trucks_by_excess(solution: &Route, pi: &ProblemInstance) -> Vec<Truck>{
+pub fn trucks_by_excess(solution: &Route, pi: &ProblemInstance) -> Vec<Truck> {
     let mut trucks = find_sorted_capacities2(solution, &pi.num_of_trucks);
-    for (ind,vc) in pi.vehicle_capacities.iter().enumerate(){
+    for (ind, vc) in pi.vehicle_capacities.iter().enumerate() {
         trucks[ind].capacity = *vc;
         trucks[ind].excess = (trucks[ind].load as i64) - (trucks[ind].capacity as i64);
     }
@@ -131,5 +144,4 @@ pub fn trucks_by_excess(solution: &Route, pi: &ProblemInstance) -> Vec<Truck>{
     trucks.sort_by_key(|t| std::cmp::Reverse(t.excess));
 
     trucks
-
 }

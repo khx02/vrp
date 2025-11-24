@@ -20,8 +20,7 @@ struct LocationData {
 /// Reads the JSON file and returns a list of all MRT postal codes
 fn get_all_mrt_postals() -> Vec<String> {
     // Read JSON file (force panic if it fails)
-    let file_content = fs::read_to_string("mrt_data.json")
-        .expect("Failed to read mrt_data.json");
+    let file_content = fs::read_to_string("mrt_data.json").expect("Failed to read mrt_data.json");
 
     // Deserialize JSON into Vec<MRTLocation>
     let all_mrt_postal: Vec<MRTLocation> =
@@ -42,8 +41,9 @@ fn random_location_generator(list_size: usize, warehouse: &str) -> Vec<String> {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     // let mut locations = vec![format!("{} Singapore", warehouse)];
     let mut locations = vec![format!("{}", warehouse)];
-    
-    while locations.len() < list_size + 1 { // +1 to include warehouse
+
+    while locations.len() < list_size + 1 {
+        // +1 to include warehouse
         let rand_index = rng.gen_range(0..all_postal.len());
         // let new_loc = format!("{} Singapore", all_postal[rand_index]);
         let new_loc = format!("{}", all_postal[rand_index]);
@@ -90,7 +90,10 @@ fn vehicle_cap_generator(capacity: &[u64], base1_vcap: &[u64]) -> (Vec<u64>, usi
     (vehicle_cap, num_vehicles)
 }
 
-pub fn get_random_inputs(no_of_locations: usize, warehouse: &str) -> (Vec<std::string::String>, Vec<u64>, Vec<u64>) {
+pub fn get_random_inputs(
+    no_of_locations: usize,
+    warehouse: &str,
+) -> (Vec<std::string::String>, Vec<u64>, Vec<u64>) {
     // Generate locations
     let locations = random_location_generator(no_of_locations, warehouse);
     println!("Generated Locations: {:?}", locations);
@@ -101,8 +104,12 @@ pub fn get_random_inputs(no_of_locations: usize, warehouse: &str) -> (Vec<std::s
 
     // Generate vehicle capacities
     let base_vehicle_cap = vec![1_000_000, 500_000];
-    let (vehicle_cap, num_vehicles) = vehicle_cap_generator(&location_capacities, &base_vehicle_cap);
-    println!("Generated Vehicle Capacities: {:?}, Number of Vehicles: {}", vehicle_cap, num_vehicles);
+    let (vehicle_cap, num_vehicles) =
+        vehicle_cap_generator(&location_capacities, &base_vehicle_cap);
+    println!(
+        "Generated Vehicle Capacities: {:?}, Number of Vehicles: {}",
+        vehicle_cap, num_vehicles
+    );
 
     (locations, location_capacities, vehicle_cap)
 }

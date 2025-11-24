@@ -164,8 +164,6 @@ pub async fn get_google_single_dm(
     Ok(dist_matrix)
 }
 
-
-
 #[derive(Debug, Deserialize)]
 struct DistanceMatrixResponse {
     rows: Vec<Row>,

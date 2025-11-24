@@ -4,17 +4,16 @@ use rand_chacha::ChaCha8Rng; // Merged rand imports
 
 // use crate::api;
 // Internal module imports
+use crate::api::google_api::create_dm_google;
+use crate::api::osrm_api::convert_to_coords;
+use crate::api::osrm_api::create_dm_osrm;
 use crate::{
     core_logic::{Location, ProblemInstance},
     evaluation::find_fitness,
-    Route
+    Route,
 };
-use crate::api::google_api::create_dm_google;
-use crate::api::osrm_api::create_dm_osrm;
-use crate::api::osrm_api::convert_to_coords;
 
 // use colored::*;
-
 
 pub async fn setup(
     num_of_trucks: usize,
@@ -33,7 +32,6 @@ pub async fn setup(
     if num_of_trucks > 1 {
         loc_capacity.splice(0..0, std::iter::repeat(0).take(num_of_trucks - 2));
     }
-    
 
     // creating the problem statement:
     let problem_instance = ProblemInstance {
@@ -63,7 +61,7 @@ pub async fn setup(
         let temp_location = Location {
             index: ind,
             demand: loc_capacity[ind],
-            is_warehouse: ind < num_of_trucks - 1
+            is_warehouse: ind < num_of_trucks - 1,
         };
         route.route.push(temp_location)
     }
@@ -72,7 +70,7 @@ pub async fn setup(
 
     (problem_instance, route)
 }
-    
+
 async fn create_dm(
     source: &str,
     locations: Vec<String>,
@@ -86,37 +84,38 @@ async fn create_dm(
                 Some(key) => key,
                 None => {
                     println!("Error: Google source requires an API key");
-                    return vec![vec![]];    // Return an empty matrix
+                    return vec![vec![]]; // Return an empty matrix
                 }
             };
 
             // 2. Call Google DM function
             match create_dm_google(locations, num_of_trucks, api_key).await {
-                Ok(matrix) => matrix,      // Return the matrix on success
+                Ok(matrix) => matrix, // Return the matrix on success
                 Err(e) => {
                     println!("Error calling Google API: {:?}", e);
-                    vec![vec![]]    // Return an empty matrix on error
+                    vec![vec![]] // Return an empty matrix on error
                 }
             }
         }
 
         "osrm" => {
             let coords: Vec<(f64, f64)>;
-            if num_of_trucks > 1{
+            if num_of_trucks > 1 {
                 let mut cloned_locations = locations.clone();
                 // Insert (num_of_trucks - 2) copies of the first location at the front
                 let first_location = cloned_locations[0].clone();
-                cloned_locations.splice(0..0,
+                cloned_locations.splice(
+                    0..0,
                     std::iter::repeat(first_location).take(num_of_trucks - 2),
                 );
                 // Now `cloned_locations` has the repeated items at the front
                 coords = convert_to_coords(cloned_locations).await;
-            }
-            else{
+            } else {
                 coords = convert_to_coords(locations).await;
             }
 
-            if coords.len() < 2 {       // check if there are sufficient locations
+            if coords.len() < 2 {
+                // check if there are sufficient locations
                 println!("Not enough valid coordinates to build a matrix.");
                 return vec![vec![]];
             }
@@ -139,16 +138,13 @@ async fn create_dm(
     }
 }
 
-
 // =========================================== OSRM API ===========================================
-
 
 // =========================================== OSRM API ===========================================
 
 // ========================================== GOOGLE API ==========================================
 
 // ========================================== GOOGLE API ==========================================
-
 
 // DEBUGGING
 // Function to print the distance matrix

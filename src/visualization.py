@@ -26,13 +26,27 @@ import matplotlib.pyplot as plt
 df = pd.read_csv("best_so_far.csv")
 
 # Extract the early stopping iteration (take the first row's value)
-ended_early_iteration = df["ended_early_iteration"].iloc[0]  # Since all values are the same, take any
+ended_early_iteration = df["ended_early_iteration"].iloc[
+    0
+]  # Since all values are the same, take any
 
 # Plot main line
-plt.plot(df["iteration"], df["new_best_so_far"], marker="o", linestyle="-", color="b", label="Best So Far")
+plt.plot(
+    df["iteration"],
+    df["new_best_so_far"],
+    marker="o",
+    linestyle="-",
+    color="b",
+    label="Best So Far",
+)
 
 # Plot a vertical line at early stopping iteration
-plt.axvline(x=ended_early_iteration, color="r", linestyle="--", label=f"Early Stop (Iteration {ended_early_iteration})")
+plt.axvline(
+    x=ended_early_iteration,
+    color="r",
+    linestyle="--",
+    label=f"Early Stop (Iteration {ended_early_iteration})",
+)
 
 # Labels and Title
 plt.xlabel("Iteration")

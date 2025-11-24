@@ -1,18 +1,18 @@
-const RUNS: usize= 20000;   
+const RUNS: usize = 20000;
 const LOCATION_COUNT: usize = 76;
 
 // Module declarations
+mod api;
 mod core_logic;
 mod evaluation;
 mod setup;
-mod utils;
 mod test;
-mod api;
-
+mod utils;
 
 // Import functions from modules
 use core_logic::{
-    choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list, perform_rollback, Location, ProblemInstance, Route
+    choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list,
+    perform_rollback, Location, ProblemInstance, Route,
 };
 use evaluation::{find_distance, find_fitness, penalty, trucks_by_excess, Truck};
 use rand_chacha::ChaCha8Rng;
@@ -21,11 +21,11 @@ use test::get_random_inputs;
 use utils::{steer_towards_best, temperature};
 
 // External crate imports
-use rand::{thread_rng, Rng, SeedableRng};
-use std::{cmp::max, collections::VecDeque, error::Error};
 use colored::*;
-use std::collections::BinaryHeap;
 use csv::Writer;
+use rand::{thread_rng, Rng, SeedableRng};
+use std::collections::BinaryHeap;
+use std::{cmp::max, collections::VecDeque, error::Error};
 
 // const API_KEY: &str = "AIzaSyCb_vtxCtFEnVhucj_Q7aJiL8fZhcze7jo";     // OLD
 #[allow(dead_code)]
@@ -34,17 +34,17 @@ const PENALTY_VALUE: u64 = 20;
 
 // Main function
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>>{
+async fn main() -> Result<(), Box<dyn Error>> {
     // INPUT
 
     // DEBUGGIN FROM TEST
-    let (locations,mut loc_cap, mut vehicle_cap) = get_random_inputs(LOCATION_COUNT, "207224");
+    let (locations, mut loc_cap, mut vehicle_cap) = get_random_inputs(LOCATION_COUNT, "207224");
     // DEBUGGIN FROM TEST
 
     // Input adjustment
     let num_of_trucks: usize = vehicle_cap.len();
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
-    if num_of_trucks > 1{
+    if num_of_trucks > 1 {
         loc_cap.splice(0..0, std::iter::repeat(0).take(num_of_trucks - 2));
     }
 
@@ -63,7 +63,8 @@ async fn main() -> Result<(), Box<dyn Error>>{
         None,
         // "google",
         // Some(API_KEY)
-    ).await;
+    )
+    .await;
 
     // DEBUGGING
 
@@ -71,9 +72,9 @@ async fn main() -> Result<(), Box<dyn Error>>{
     // DEBUGGING
 
     // === SEARCH STATE ===
-    let mut current_solution = initial_solution.clone();        // the solution we're currently exploring
-    let mut best_so_far: Route = initial_solution.clone();      // global best solution found across all iterations
-    let mut best_so_far_iteration = 0;                          // iteration index when best_so_far was last updated
+    let mut current_solution = initial_solution.clone(); // the solution we're currently exploring
+    let mut best_so_far: Route = initial_solution.clone(); // global best solution found across all iterations
+    let mut best_so_far_iteration = 0; // iteration index when best_so_far was last updated
 
     // Rolling history of solutions (can be used for rollback/trend checks).
     // Starts empty; you push into this each iter as needed.
@@ -85,7 +86,8 @@ async fn main() -> Result<(), Box<dyn Error>>{
 
     // The swap picked in the previous iteration (by positions in the route).
     // Initialized to a sentinel "out of range" pair to avoid accidental overlap on iter 0.
-    let mut parent_swap: (usize, usize) = (current_solution.route.len(), current_solution.route.len());
+    let mut parent_swap: (usize, usize) =
+        (current_solution.route.len(), current_solution.route.len());
 
     // === STAGNATION TRACKING ===
     // Counts consecutive iterations with no improvement of best_so_far.
@@ -108,10 +110,10 @@ async fn main() -> Result<(), Box<dyn Error>>{
 
     // === EARLY-TERMINATION SNAPSHOT ===
     // If we decide to end early, capture the state at that moment for reporting.
-    let mut ended_early_value = 0.0;        // best fitness at early stop time
-    let mut has_ended = false;              // whether we already flagged early end
+    let mut ended_early_value = 0.0; // best fitness at early stop time
+    let mut has_ended = false; // whether we already flagged early end
     let mut ended_early_max_stagnation = 0; // stagnation streak at early stop
-    let mut ended_early_iteration = 0;      // iteration index of early stop
+    let mut ended_early_iteration = 0; // iteration index of early stop
 
     // RNG (seeded for reproducibility across runs)
     let mut rng = ChaCha8Rng::seed_from_u64(12345);
@@ -127,8 +129,6 @@ async fn main() -> Result<(), Box<dyn Error>>{
     // let mut tabu_list: VecDeque<Route> = VecDeque::new();
     let mut tabu_list: VecDeque<(usize, usize)> = VecDeque::new();
 
-
-
     // ======================================== DEBUGGING ========================================
 
     print_dist_matrix(&problem_instance.distance_matrix);
@@ -139,11 +139,9 @@ async fn main() -> Result<(), Box<dyn Error>>{
         problem_instance.location_demands
     );
 
-
     println!("INITIAL SOLUTION:");
     print_solution(&initial_solution, &problem_instance);
     println!();
-    
 
     let mut c1 = 0;
     let mut c2 = 0;
@@ -193,14 +191,17 @@ async fn main() -> Result<(), Box<dyn Error>>{
             route: current_solution.route.clone(), // Copy the route
             fitness: chosen_solution.0,
         };
-    
+
         final_neighbour
             .route
             .swap(chosen_solution.1 .0, chosen_solution.1 .1); // Swap in place
-        
 
         // insert_and_adjust_tabu_list(&mut tabu_list, final_neighbour.clone(), len_tabu_list);
-        insert_and_adjust_tabu_list(&mut tabu_list, (chosen_solution.1 .0, chosen_solution.1 .1), len_tabu_list);
+        insert_and_adjust_tabu_list(
+            &mut tabu_list,
+            (chosen_solution.1 .0, chosen_solution.1 .1),
+            len_tabu_list,
+        );
 
         if final_neighbour.fitness < best_so_far.fitness {
             best_so_far = final_neighbour.clone();
@@ -234,7 +235,8 @@ async fn main() -> Result<(), Box<dyn Error>>{
         // Perform rollback to best_so_far with some probability, influenced by Simulated Annealing
         // if rng.gen::<f64>() <= temp * rng.gen_range(0.7..1.0)
         // if no_seed_rng.gen::<f64>() <= temp * no_seed_rng.gen_range(0.9..1.0)
-        if no_seed_rng.gen::<f64>() * no_seed_rng.gen_range(0.3..0.6) <= temp * no_seed_rng.gen_range(0.9..1.0)
+        if no_seed_rng.gen::<f64>() * no_seed_rng.gen_range(0.3..0.6)
+            <= temp * no_seed_rng.gen_range(0.9..1.0)
             && mutate_to_best_check == 0
             && saved_solutions.len() > (len_tabu_list * 4)
         {
@@ -249,7 +251,8 @@ async fn main() -> Result<(), Box<dyn Error>>{
             // Change SOME values in the current solution to match the best solution so far, based off some propabilty of occurence
             c2 += 1;
             let num_to_change =
-                ((next_solution.route.len() as f64) * temp * no_seed_rng.gen::<f64>()).ceil() as usize;
+                ((next_solution.route.len() as f64) * temp * no_seed_rng.gen::<f64>()).ceil()
+                    as usize;
             steer_towards_best(&mut next_solution, &best_so_far, num_to_change)
         }
 
@@ -262,24 +265,31 @@ async fn main() -> Result<(), Box<dyn Error>>{
         // Final Mutation
         // less likely to occue later in the loop, second random f64 is to introduce some decay factor to reduce predictability
         // if no_seed_rng.gen::<f64>() <= temp * no_seed_rng.gen_range(0.8..1.0) {
-        if no_seed_rng.gen::<f64>() * no_seed_rng.gen_range(0.4..0.6) <= temp * no_seed_rng.gen_range(0.8..1.0) {
+        if no_seed_rng.gen::<f64>() * no_seed_rng.gen_range(0.4..0.6)
+            <= temp * no_seed_rng.gen_range(0.8..1.0)
+        {
             final_mutation(&mut current_solution, &mut rng);
             c4 += 1;
         }
-        
 
-        // if the new solution is infeasible or has a penalty attached to it, then we can readjust it to a better 
+        // if the new solution is infeasible or has a penalty attached to it, then we can readjust it to a better
         // solution, such that we wouldnt have to waste iterations fixing the bad solutions
-        next_solution.fitness = find_fitness(&next_solution, &problem_instance.penalty_value, &num_of_trucks, &problem_instance.vehicle_capacities, &problem_instance.distance_matrix);
+        next_solution.fitness = find_fitness(
+            &next_solution,
+            &problem_instance.penalty_value,
+            &num_of_trucks,
+            &problem_instance.vehicle_capacities,
+            &problem_instance.distance_matrix,
+        );
         let next_dist = find_distance(&next_solution, &problem_instance.distance_matrix);
         println!("\nnext solution fitness: {}", next_solution.fitness);
         println!("next solution distance: {}", next_dist);
-        if next_solution.fitness > next_dist {   // If theres a penalty
+        if next_solution.fitness > next_dist {
+            // If theres a penalty
             println!("DEFECT\nSolution with defects, before ansl Solution:");
             print_solution(&next_solution, &problem_instance);
             next_solution = anls_destroy_and_recreate(&mut next_solution, &problem_instance)
         }
-
 
         // update best so far if the next solution is the best one yet.
         if next_solution.fitness < best_so_far.fitness {
@@ -324,18 +334,13 @@ async fn main() -> Result<(), Box<dyn Error>>{
             temperature_factor = 1;
         }
 
-
-
         current_solution = next_solution;
-
 
         println!("\nChosen NEXT Solution:");
         print_solution(&current_solution, &problem_instance);
     }
 
-
     println!("============================== END OF CALCULATION ==============================");
-
 
     // === FINAL REPORTING ===
 
@@ -356,7 +361,10 @@ async fn main() -> Result<(), Box<dyn Error>>{
     println!("ended early itr diff: {}", RUNS - ended_early_iteration);
 
     // Fitness delta between early-end snapshot and final best (can be negative if improved later)
-    println!("ended early finess diff: {:.2}\n", ended_early_value - best_so_far.fitness);
+    println!(
+        "ended early finess diff: {:.2}\n",
+        ended_early_value - best_so_far.fitness
+    );
 
     // Relative improvement percentage from early-end snapshot to final best
     println!(
@@ -376,15 +384,19 @@ async fn main() -> Result<(), Box<dyn Error>>{
     println!();
     println!("c1, c2, c3, c4: {} , {} , {} , {}", c1, c2, c3, c4);
 
-
-    save_to_csv(&best_so_far_updates, ended_early_iteration, "best_so_far.csv")?;
+    save_to_csv(
+        &best_so_far_updates,
+        ended_early_iteration,
+        "best_so_far.csv",
+    )?;
     Ok(())
-
 }
 
-
-
-fn save_to_csv(best_so_far_updates: &Vec<(usize, f64)>, ended_early_iteration: usize, filename: &str) -> Result<(), Box<dyn Error>> {
+fn save_to_csv(
+    best_so_far_updates: &Vec<(usize, f64)>,
+    ended_early_iteration: usize,
+    filename: &str,
+) -> Result<(), Box<dyn Error>> {
     let mut wtr = Writer::from_path(filename)?;
 
     // Write header
@@ -393,16 +405,18 @@ fn save_to_csv(best_so_far_updates: &Vec<(usize, f64)>, ended_early_iteration: u
     // Write data
     for (iteration, value) in best_so_far_updates {
         // let marker = if *iteration == ended_early_iteration { "1" } else { "0" };
-        wtr.write_record(&[iteration.to_string(), value.to_string(), ended_early_iteration.to_string()])?;
+        wtr.write_record(&[
+            iteration.to_string(),
+            value.to_string(),
+            ended_early_iteration.to_string(),
+        ])?;
     }
 
     wtr.flush()?; // Ensure data is written
     Ok(())
 }
 
-
-
-fn anls_destroy_and_recreate(solution: &mut Route, pi: &ProblemInstance, ) -> Route {
+fn anls_destroy_and_recreate(solution: &mut Route, pi: &ProblemInstance) -> Route {
     // let mut index_dict: Vec<usize> = vec![0; solution.route.len()];
     // for ind in 0..solution.route.len(){
     //     let loc_index = solution.route[ind].index;
@@ -411,13 +425,16 @@ fn anls_destroy_and_recreate(solution: &mut Route, pi: &ProblemInstance, ) -> Ro
 
     let mut trucks = trucks_by_excess(solution, pi);
     let mut destroyed_locations_max_heap = BinaryHeap::new();
-    for truck in &mut trucks{ 
+    for truck in &mut trucks {
         if truck.excess <= 0 {
-            break
+            break;
         }
 
-        while truck.excess > 0{
-            let destroyed_location = truck.route.pop().expect("Error: Tried to pop from an empty route!");
+        while truck.excess > 0 {
+            let destroyed_location = truck
+                .route
+                .pop()
+                .expect("Error: Tried to pop from an empty route!");
             truck.load -= destroyed_location.demand;
             truck.excess -= destroyed_location.demand as i64;
             destroyed_locations_max_heap.push(destroyed_location);
@@ -426,23 +443,29 @@ fn anls_destroy_and_recreate(solution: &mut Route, pi: &ProblemInstance, ) -> Ro
 
     // re-create the route from the destroyed locations
     for truck in trucks.iter_mut().rev() {
-        if destroyed_locations_max_heap.is_empty() || truck.excess > 0 { break }
+        if destroyed_locations_max_heap.is_empty() || truck.excess > 0 {
+            break;
+        }
 
         // reinsert them in order of highest demand first into trucks, starting with the one with most space left
         while truck.excess < 0 &&                                                               // while there is still space left
                 !destroyed_locations_max_heap.is_empty() &&
-                truck.excess + destroyed_locations_max_heap.peek().unwrap().demand as i64 <= 0         // and addition of the new loc wont send it over
+                truck.excess + destroyed_locations_max_heap.peek().unwrap().demand as i64 <= 0
+        // and addition of the new loc wont send it over
         {
-            truck.route.push(destroyed_locations_max_heap.pop().unwrap())
-
+            truck
+                .route
+                .push(destroyed_locations_max_heap.pop().unwrap())
         }
     }
 
-    if !destroyed_locations_max_heap.is_empty(){
+    if !destroyed_locations_max_heap.is_empty() {
         if let Some(lowest_excess_truck) = trucks.iter_mut().min_by_key(|t| t.excess) {
             // Move all elements from destroyed_locations into lowest_excess_truck.route
-            lowest_excess_truck.route.extend(destroyed_locations_max_heap.drain());
-        }   
+            lowest_excess_truck
+                .route
+                .extend(destroyed_locations_max_heap.drain());
+        }
     }
 
     let recreated_solution = recreate_route_from_trucks(&mut trucks, pi);
@@ -454,7 +477,7 @@ fn recreate_route_from_trucks(trucks: &mut Vec<Truck>, pi: &ProblemInstance) -> 
     let mut partition_counter = 0;
     for (i, truck) in trucks.iter().enumerate() {
         recreated_route.extend(truck.route.clone());
-    
+
         // Only append partition if this is NOT the last truck
         if i < trucks.len() - 1 {
             recreated_route.push(Location {
@@ -468,25 +491,42 @@ fn recreate_route_from_trucks(trucks: &mut Vec<Truck>, pi: &ProblemInstance) -> 
 
     let mut recreated_solution = Route {
         route: recreated_route,
-        fitness: 0.0
+        fitness: 0.0,
     };
 
-    recreated_solution.fitness = find_fitness(&recreated_solution, &pi.penalty_value, &pi.num_of_trucks, &pi.vehicle_capacities, &pi.distance_matrix);
+    recreated_solution.fitness = find_fitness(
+        &recreated_solution,
+        &pi.penalty_value,
+        &pi.num_of_trucks,
+        &pi.vehicle_capacities,
+        &pi.distance_matrix,
+    );
     recreated_solution
 }
 
-fn print_solution(solution: &Route, problem_instance: &ProblemInstance){
+fn print_solution(solution: &Route, problem_instance: &ProblemInstance) {
     let partition = partition_solution(solution, &problem_instance.vehicle_capacities);
 
     let dist = find_distance(solution, &problem_instance.distance_matrix);
-    let fitness = find_fitness( solution, 
-        &problem_instance.penalty_value, &problem_instance.num_of_trucks,
-        &problem_instance.vehicle_capacities, &problem_instance.distance_matrix);
-    let pen = penalty(solution, &problem_instance.penalty_value, &problem_instance.num_of_trucks, &problem_instance.vehicle_capacities);
+    let fitness = find_fitness(
+        solution,
+        &problem_instance.penalty_value,
+        &problem_instance.num_of_trucks,
+        &problem_instance.vehicle_capacities,
+        &problem_instance.distance_matrix,
+    );
+    let pen = penalty(
+        solution,
+        &problem_instance.penalty_value,
+        &problem_instance.num_of_trucks,
+        &problem_instance.vehicle_capacities,
+    );
 
     if pen > 0.0 {
         // println!("{}", format!("Distance: {:.2}, {}", dist, format!("Fitness: {:.2}, Penalty: {:.2}", fitness, pen).red()));
-        println!("Distance: {:.2}, {}", dist,
+        println!(
+            "Distance: {:.2}, {}",
+            dist,
             format!("Fitness: {:.2}, Penalty: {:.2}", fitness, pen).red()
         );
     } else {
@@ -498,20 +538,17 @@ fn print_solution(solution: &Route, problem_instance: &ProblemInstance){
         );
     }
 
-    
-
     print_location_array(solution);
-    for (route, load, capacity) in partition{
+    for (route, load, capacity) in partition {
         println!("{} / {} : {:?}", load, capacity, route)
     }
-
 }
 
-fn partition_solution(solution: &Route, vehicle_capacity: &[u64]) -> Vec<(Vec<usize>, u64, u64)>{
+fn partition_solution(solution: &Route, vehicle_capacity: &[u64]) -> Vec<(Vec<usize>, u64, u64)> {
     let mut route_partition: Vec<(Vec<usize>, u64)> = vec![];
     let mut temp_partition: Vec<usize> = vec![];
     let mut temp_load = 0;
-    for loc in &solution.route{
+    for loc in &solution.route {
         // println!("{}", loc.is_warehouse);
         if !loc.is_warehouse {
             temp_partition.push(loc.index);
@@ -528,16 +565,16 @@ fn partition_solution(solution: &Route, vehicle_capacity: &[u64]) -> Vec<(Vec<us
 
     route_partition.sort_by_key(|&(_, value)| std::cmp::Reverse(value));
     let mut partition: Vec<(Vec<usize>, u64, u64)> = vec![];
-    
+
     for (ind, (r, load)) in route_partition.iter().enumerate() {
-        partition.push((r.clone(), *load, vehicle_capacity[ind]));      // Clone to avoid ownership issues
-    } 
+        partition.push((r.clone(), *load, vehicle_capacity[ind])); // Clone to avoid ownership issues
+    }
     partition
 }
 
-fn print_location_array(solution: &Route){
-    let mut loc_indices: Vec<usize> = vec![]; 
-    for loc in &solution.route{
+fn print_location_array(solution: &Route) {
+    let mut loc_indices: Vec<usize> = vec![];
+    for loc in &solution.route {
         loc_indices.push(loc.index);
     }
     println!("solution route: {:?}", loc_indices)

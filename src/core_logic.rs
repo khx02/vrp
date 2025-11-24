@@ -1,18 +1,17 @@
 // Functions used ONLY in the MAIN function in main.rs
 
 // External crates
-use rand::{seq::IteratorRandom};
+use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*; // Brings in Rayon traits for parallel iterators
 
 // Standard library imports
-use std::collections::VecDeque;
-use std::collections::HashMap; // for tabu map
+use std::collections::HashMap;
+use std::collections::VecDeque; // for tabu map
 
 // Internal module imports
 use crate::evaluation::find_fitness;
-use crate::utils::{swaps_overlap};
-
+use crate::utils::swaps_overlap;
 
 pub struct ProblemInstance {
     #[allow(dead_code)]
@@ -139,7 +138,9 @@ pub fn perform_rollback(
 
 pub fn final_mutation(next_solution: &mut Route, rng: &mut ChaCha8Rng) {
     let n = next_solution.route.len();
-    if n < 2 { return; }
+    if n < 2 {
+        return;
+    }
 
     // Reverse a random sublist (choose 2 distinct indices)
     let mut pair: Vec<usize> = (0..n).choose_multiple(rng, 2);
@@ -178,7 +179,11 @@ pub fn choose_best_candidate(
     // Normalise the candidate swap pair (always store i<j so (1,3) == (3,1))
     let cand_pair = {
         let (i, j) = chosen_solution.1;
-        if i < j { (i, j) } else { (j, i) }
+        if i < j {
+            (i, j)
+        } else {
+            (j, i)
+        }
     };
 
     // Check if this swap is tabu (recently performed)
@@ -210,13 +215,11 @@ pub fn choose_best_candidate(
         }
     }
 
-
     chosen_solution
 }
 
-
 /// Insert a new swap move into the tabu list and keep it within the max length.
-/// 
+///
 /// - `tabu_list`: queue of recent swaps, each stored as (i, j) with i < j.
 /// - `swap_move`: the move (i, j) just applied in this iteration.
 /// - `len_tabu_list`: maximum tabu tenure (queue length).
