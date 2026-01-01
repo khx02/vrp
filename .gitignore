@@ -21,7 +21,8 @@ target
 #.idea/
 
 .env
-.sqlite
+*.sqlite
 .DS_Store
 .csv
 .png
+osrm-sg
