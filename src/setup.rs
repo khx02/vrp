@@ -1,19 +1,18 @@
 // External crates
-use rand::{seq::SliceRandom, thread_rng, SeedableRng};
-use rand_chacha::ChaCha8Rng; // Merged rand imports
+use rand::{seq::SliceRandom, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use sqlx::SqlitePool;
 
-// use crate::api;
 // Internal module imports
 use crate::api::google_api::create_dm_google;
-use crate::api::osrm_api::convert_to_coords;
-use crate::api::osrm_api::create_dm_osrm;
+use crate::api::osrm_api::{convert_to_coords, create_dm_osrm};
 use crate::{
     core_logic::{Location, ProblemInstance},
     evaluation::find_fitness,
     Route,
 };
 
-// use colored::*;
+use tracing::{debug, error, info};
 
 pub async fn setup(
     num_of_trucks: usize,
@@ -23,17 +22,24 @@ pub async fn setup(
     penalty: u64,
     source: &str,
     api_key: Option<&str>,
+    pool: SqlitePool,
 ) -> (ProblemInstance, Route) {
-    // First sort the vehicle capacity
+    info!(
+        "Starting setup with {} trucks, {} locations",
+        num_of_trucks,
+        pre_locations.len()
+    );
+
+    // Sort vehicle capacities in descending order
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
 
-    let dm = create_dm(source, pre_locations.to_vec(), num_of_trucks, api_key).await;
+    let dm = create_dm(source, pre_locations.to_vec(), num_of_trucks, api_key, pool).await;
 
+    // Insert dummy warehouse demands for multi-truck scenarios
     if num_of_trucks > 1 {
         loc_capacity.splice(0..0, std::iter::repeat(0).take(num_of_trucks - 2));
     }
 
-    // creating the problem statement:
     let problem_instance = ProblemInstance {
         locations_string: pre_locations.to_owned(),
         distance_matrix: dm.clone(),
@@ -43,12 +49,11 @@ pub async fn setup(
         penalty_value: penalty,
     };
 
-    // Generate a list of indices from 1 to len(locations)
+    // Generate and shuffle initial solution indices
     let mut initial_solution_indices: Vec<usize> = (0..pre_locations.len()).collect();
-    println!("{:?}", initial_solution_indices);
-    // Shuffle the solution
-    // let mut rng = thread_rng();
-    let seed: u64 = 12345; // Set a fixed seed
+    debug!("Initial solution indices: {:?}", initial_solution_indices);
+
+    let seed: u64 = 12345;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     initial_solution_indices.shuffle(&mut rng);
 
@@ -63,10 +68,12 @@ pub async fn setup(
             demand: loc_capacity[ind],
             is_warehouse: ind < num_of_trucks - 1,
         };
-        route.route.push(temp_location)
+        route.route.push(temp_location);
     }
 
     route.fitness = find_fitness(&route, &penalty, &num_of_trucks, vehicle_cap, &dm);
+
+    info!("Setup completed successfully");
 
     (problem_instance, route)
 }
@@ -75,81 +82,74 @@ async fn create_dm(
     source: &str,
     locations: Vec<String>,
     num_of_trucks: usize,
-    api_str: Option<&str>,
+    api_key: Option<&str>,
+    pool: SqlitePool,
 ) -> Vec<Vec<f64>> {
+    info!(
+        "Creating distance matrix using source '{}' ({} locations, {} trucks)",
+        source,
+        locations.len(),
+        num_of_trucks
+    );
+
     match source {
         "google" => {
-            // 1. Ensure we have an API key for Google
-            let api_key = match api_str {
-                Some(key) => key,
-                None => {
-                    println!("Error: Google source requires an API key");
-                    return vec![vec![]]; // Return an empty matrix
-                }
-            };
-
-            // 2. Call Google DM function
+            let api_key = api_key.expect("API key required for Google source");
+            debug!("Fetching distance matrix from Google Maps API");
             match create_dm_google(locations, num_of_trucks, api_key).await {
-                Ok(matrix) => matrix, // Return the matrix on success
-                Err(e) => {
-                    println!("Error calling Google API: {:?}", e);
-                    vec![vec![]] // Return an empty matrix on error
+                Ok(matrix) => {
+                    info!("Successfully retrieved matrix from Google API");
+                    matrix
                 }
-            }
-        }
-
-        "osrm" => {
-            let coords: Vec<(f64, f64)>;
-            if num_of_trucks > 1 {
-                let mut cloned_locations = locations.clone();
-                // Insert (num_of_trucks - 2) copies of the first location at the front
-                let first_location = cloned_locations[0].clone();
-                cloned_locations.splice(
-                    0..0,
-                    std::iter::repeat(first_location).take(num_of_trucks - 2),
-                );
-                // Now `cloned_locations` has the repeated items at the front
-                coords = convert_to_coords(cloned_locations).await;
-            } else {
-                coords = convert_to_coords(locations).await;
-            }
-
-            if coords.len() < 2 {
-                // check if there are sufficient locations
-                println!("Not enough valid coordinates to build a matrix.");
-                return vec![vec![]];
-            }
-
-            // 2. Get OSRM distance matrix
-            match create_dm_osrm(&coords).await {
-                Some(matrix) => matrix,
-                None => {
-                    println!("Failed to get distance matrix from OSRM.");
+                Err(e) => {
+                    error!("Google API request failed: {:?}", e);
                     vec![vec![]]
                 }
             }
         }
 
-        // Additional sources if needed...
+        "osrm" => {
+            let mut target_locations = locations;
+
+            // For multi-truck scenarios, repeat warehouse location
+            if num_of_trucks > 1 {
+                let warehouse = target_locations[0].clone();
+                target_locations.splice(0..0, std::iter::repeat(warehouse).take(num_of_trucks - 2));
+                debug!("Added {} repeated warehouse locations", num_of_trucks - 2);
+            }
+
+            let coords = convert_to_coords(&pool, target_locations).await;
+            debug!("Converted to {} coordinates", coords.len());
+
+            if coords.len() < 2 {
+                error!("Insufficient valid coordinates for distance matrix");
+                return vec![vec![]];
+            }
+
+            match create_dm_osrm(&coords).await {
+                Some(matrix) => {
+                    info!("Successfully retrieved matrix from OSRM");
+                    matrix
+                }
+                None => {
+                    error!("OSRM failed to return a valid distance matrix");
+                    vec![vec![]]
+                }
+            }
+        }
+
         _ => {
-            println!("Unknown source. Doing nothing.");
+            error!("Unknown distance matrix source: {}", source);
             vec![vec![]]
         }
     }
 }
 
-// =========================================== OSRM API ===========================================
-
-// =========================================== OSRM API ===========================================
-
-// ========================================== GOOGLE API ==========================================
-
-// ========================================== GOOGLE API ==========================================
-
-// DEBUGGING
-// Function to print the distance matrix
+// Print distance matrix for debugging
 pub fn print_dist_matrix(dist_m: &Vec<Vec<f64>>) {
+    debug!("Distance matrix:");
     for row in dist_m {
-        println!("{:?}", row);
+        debug!("{:?}", row);
     }
 }
+

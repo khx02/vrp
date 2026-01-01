@@ -4,6 +4,7 @@ const LOCATION_COUNT: usize = 76;
 // Module declarations
 mod api;
 mod core_logic;
+mod database;
 mod evaluation;
 mod setup;
 mod test;
@@ -14,6 +15,7 @@ use core_logic::{
     choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list,
     perform_rollback, Location, ProblemInstance, Route,
 };
+use database::sqlx::db_connection;
 use evaluation::{find_distance, find_fitness, penalty, trucks_by_excess, Truck};
 use rand_chacha::ChaCha8Rng;
 use setup::{print_dist_matrix, setup};
@@ -26,22 +28,36 @@ use csv::Writer;
 use rand::{thread_rng, Rng, SeedableRng};
 use std::collections::BinaryHeap;
 use std::{cmp::max, collections::VecDeque, error::Error};
+use tracing::{debug, info, span, trace, Level};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-// const API_KEY: &str = "AIzaSyCb_vtxCtFEnVhucj_Q7aJiL8fZhcze7jo";     // OLD
 #[allow(dead_code)]
 const API_KEY: &str = "AIzaSyCnwKpmjbGSNixdIo8xzbkXNR2Y_MPeGoM";
 const PENALTY_VALUE: u64 = 20;
 
-// Main function
 #[tokio::main]
+#[tracing::instrument(name = "VRP Solver", level = "info")]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Initialise tracing_subscriber for better logging/debugging
+    tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env()) // Reads RUST_LOG
+        .with(
+            fmt::layer()
+                .with_span_events(fmt::format::FmtSpan::NEW | fmt::format::FmtSpan::CLOSE)
+                .pretty(), // or .compact() if you want less verbose
+        )
+        .init();
+
+    let db_pool = db_connection().await?;
+
+    info!(
+        "Starting VRP solver with {} locations and {} iterations",
+        LOCATION_COUNT, RUNS
+    );
+
     // INPUT
-
-    // DEBUGGIN FROM TEST
     let (locations, mut loc_cap, mut vehicle_cap) = get_random_inputs(LOCATION_COUNT, "207224");
-    // DEBUGGIN FROM TEST
 
-    // Input adjustment
     let num_of_trucks: usize = vehicle_cap.len();
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
     if num_of_trucks > 1 {
@@ -49,131 +65,87 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // SETUP
-    // let mut rng = thread_rng();
-    // let seed: u64 = 12345; // Set a fixed seed
-    // let rng = ChaCha8Rng::seed_from_u64(seed);
     let mut no_seed_rng = thread_rng();
-    let (problem_instance, initial_solution) = setup(
-        num_of_trucks,
-        &mut vehicle_cap,
-        &locations,
-        &mut loc_cap,
-        PENALTY_VALUE,
-        "osrm",
-        None,
-        // "google",
-        // Some(API_KEY)
-    )
-    .await;
-
-    // DEBUGGING
-
-    // let initial_solution = [7, 3, 0, 9, 11, 2, 5, 6, 8, 1, 4, 10];
-    // DEBUGGING
+    let (problem_instance, initial_solution) = {
+        let span = span!(Level::INFO, "setup");
+        let _guard = span.enter();
+        let result = setup(
+            num_of_trucks,
+            &mut vehicle_cap,
+            &locations,
+            &mut loc_cap,
+            PENALTY_VALUE,
+            "osrm",
+            None,
+            db_pool,
+        )
+        .await;
+        result
+    };
 
     // === SEARCH STATE ===
-    let mut current_solution = initial_solution.clone(); // the solution we're currently exploring
-    let mut best_so_far: Route = initial_solution.clone(); // global best solution found across all iterations
-    let mut best_so_far_iteration = 0; // iteration index when best_so_far was last updated
+    let mut current_solution = initial_solution.clone();
+    let mut best_so_far: Route = initial_solution.clone();
+    let mut best_so_far_iteration = 0;
 
-    // Rolling history of solutions (can be used for rollback/trend checks).
-    // Starts empty; you push into this each iter as needed.
     let mut saved_solutions: Vec<Route> = vec![];
-
-    // Aspiration window for allowing tabu moves that are "close enough" to best.
-    // NOTE: Magic number; consider tuning/deriving relative to problem scale.
     let aspiration_threshold = 20.0;
-
-    // The swap picked in the previous iteration (by positions in the route).
-    // Initialized to a sentinel "out of range" pair to avoid accidental overlap on iter 0.
     let mut parent_swap: (usize, usize) =
         (current_solution.route.len(), current_solution.route.len());
 
-    // === STAGNATION TRACKING ===
-    // Counts consecutive iterations with no improvement of best_so_far.
+    // Stagnation tracking
     let mut stagnation = 0;
-    // Maximum observed stagnation streak (for reporting/diagnostics).
     let mut max_stagnation = 0;
-
-    // Heuristic cap on how long we tolerate stagnation before early-stop logic kicks in.
-    // Scales superlinearly with instance size; min of 300 as a floor.
-    // If n < 50, be more patient (15.0), else 9.0.
     let scaling_factor = if locations.len() < 50 { 15.0 } else { 9.0 };
     let max_no_improvement = max(
         300,
         (scaling_factor * (locations.len() as f64).powf(1.33)) as usize,
     );
-
-    // Temperature multiplier for any SA-like acceptance logic you may apply elsewhere.
-    // 1 = normal; 2 = temporarily hotter when stagnating.
     let mut temperature_factor = 1;
 
-    // === EARLY-TERMINATION SNAPSHOT ===
-    // If we decide to end early, capture the state at that moment for reporting.
-    let mut ended_early_value = 0.0; // best fitness at early stop time
-    let mut has_ended = false; // whether we already flagged early end
-    let mut ended_early_max_stagnation = 0; // stagnation streak at early stop
-    let mut ended_early_iteration = 0; // iteration index of early stop
+    // Early termination snapshot
+    let mut ended_early_value = 0.0;
+    let mut has_ended = false;
+    let mut ended_early_max_stagnation = 0;
+    let mut ended_early_iteration = 0;
 
-    // RNG (seeded for reproducibility across runs)
     let mut rng = ChaCha8Rng::seed_from_u64(12345);
 
-    // === TABU (current implementation uses a route history deque) ===
-    // Target tabu size (will be adjusted within [tl_lower_bound_len, tl_upper_bound_len]).
+    // Tabu list
     let mut len_tabu_list = 20;
     let tl_upper_bound_len = 29;
     let tl_lower_bound_len = 11;
-
-    // Deque holding recent solutions as "tabu" states.
-    // NOTE: This is state-based tabu by route/fitness; consider move- or city-pair-based tabu for robustness.
-    // let mut tabu_list: VecDeque<Route> = VecDeque::new();
     let mut tabu_list: VecDeque<(usize, usize)> = VecDeque::new();
 
-    // ======================================== DEBUGGING ========================================
-
-    print_dist_matrix(&problem_instance.distance_matrix);
-    println!("\n\nlocations: {:?}", locations);
-    println!("vehicle_cap: {:?}", vehicle_cap);
-    println!(
-        "location Capcity: {:?}\n\n",
-        problem_instance.location_demands
-    );
-
-    println!("INITIAL SOLUTION:");
+    info!("INITIAL SOLUTION:");
     print_solution(&initial_solution, &problem_instance);
-    println!();
 
     let mut c1 = 0;
     let mut c2 = 0;
     let mut c3 = 0;
     let mut c4 = 0;
-
     let mut best_so_far_updates: Vec<(usize, f64)> = vec![];
-    // ======================================== DEBUGGING ========================================
 
-    // MAIN LOOP
+    // === MAIN OPTIMIZATION LOOP ===
+    let loop_span = span!(Level::INFO, "main_search_loop", total_iterations = RUNS);
+    let _loop_guard = loop_span.enter();
+
     for iteration in 1..=RUNS {
-        println!(
-            "============================== Iteration {} ==============================\n",
-            iteration
-        );
+        let iter_span = span!(Level::DEBUG, "iteration", iter = iteration);
+        let _iter_guard = iter_span.enter();
+
+        debug!("=== Iteration {} ===", iteration);
 
         saved_solutions.push(current_solution.clone());
-        // println!();
 
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        // =================================== PHASE 1 ===================================
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        // PHASE 1: Find neighbours
+        let swap_candidates_ind: Vec<(f64, (usize, usize))> = {
+            let span = span!(Level::DEBUG, "find_neighbours");
+            let _g = span.enter();
+            find_neighbours(&current_solution, &problem_instance)
+        };
 
-        // O(n^3)
-        // Find all the fitness' of the neighbours of current solution
-        let swap_candidates_ind: Vec<(f64, (usize, usize))> =
-            find_neighbours(&current_solution, &problem_instance);
-
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        // =================================== PHASE 2 ===================================
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
+        // PHASE 2: Choose best candidate
         let chosen_solution = choose_best_candidate(
             &swap_candidates_ind,
             &tabu_list,
@@ -182,59 +154,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &parent_swap,
         );
 
-        // ======================================== DEBUGGING ========================================
-        let (f, p) = chosen_solution;
-        println!("chosen swap: {:.2}, {:?}\n", f, p);
-        // ======================================== DEBUGGING ========================================
+        debug!(
+            "chosen swap: {:.2}, {:?}",
+            chosen_solution.0, chosen_solution.1
+        );
 
         let mut final_neighbour = Route {
-            route: current_solution.route.clone(), // Copy the route
+            route: current_solution.route.clone(),
             fitness: chosen_solution.0,
         };
-
         final_neighbour
             .route
-            .swap(chosen_solution.1 .0, chosen_solution.1 .1); // Swap in place
+            .swap(chosen_solution.1 .0, chosen_solution.1 .1);
 
-        // insert_and_adjust_tabu_list(&mut tabu_list, final_neighbour.clone(), len_tabu_list);
-        insert_and_adjust_tabu_list(
-            &mut tabu_list,
-            (chosen_solution.1 .0, chosen_solution.1 .1),
-            len_tabu_list,
-        );
+        insert_and_adjust_tabu_list(&mut tabu_list, chosen_solution.1, len_tabu_list);
 
         if final_neighbour.fitness < best_so_far.fitness {
             best_so_far = final_neighbour.clone();
             best_so_far_iteration = iteration;
-            best_so_far_updates.push((iteration, final_neighbour.fitness))
+            best_so_far_updates.push((iteration, final_neighbour.fitness));
+            info!(
+                "New best at iteration {}: fitness = {:.2}",
+                iteration, best_so_far.fitness
+            );
         }
 
-        // // ======================================== DEBUGGING ========================================
-        print!("\nBEST SO FAR at itration {}:\n", best_so_far_iteration);
-        print_solution(&best_so_far, &problem_instance);
-        // println!("");
-
-        // // ======================================== DEBUGGING ========================================
-
-        // dont need to clone since we dont use it anymore
         parent_swap = chosen_solution.1;
 
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        // =================================== PHASE 3 ===================================
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-        // Introduces random variation to escape local optima (similar to genetic mutation).
-        // These mod values periodically trigger changes to influence the search process.
-        let mutate_to_best_check = iteration % 50; // revert back to best so far if not making any progress
-        let mutate_steer_best_check = iteration % 40; // change some of the current values to the best_so_far values
-        let mutate_tabu_len_check = iteration % 20; // mutate the required length of the tabu list
+        // PHASE 3: Diversification / Mutation
         let temp = temperature(RUNS, iteration, temperature_factor);
-
         let mut next_solution = final_neighbour;
 
-        // Perform rollback to best_so_far with some probability, influenced by Simulated Annealing
-        // if rng.gen::<f64>() <= temp * rng.gen_range(0.7..1.0)
-        // if no_seed_rng.gen::<f64>() <= temp * no_seed_rng.gen_range(0.9..1.0)
+        let mutate_to_best_check = iteration % 50;
+        let mutate_steer_best_check = iteration % 40;
+        let mutate_tabu_len_check = iteration % 20;
+
         if no_seed_rng.gen::<f64>() * no_seed_rng.gen_range(0.3..0.6)
             <= temp * no_seed_rng.gen_range(0.9..1.0)
             && mutate_to_best_check == 0
@@ -248,23 +202,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &best_so_far,
             );
         } else if mutate_steer_best_check == 0 {
-            // Change SOME values in the current solution to match the best solution so far, based off some propabilty of occurence
             c2 += 1;
             let num_to_change =
                 ((next_solution.route.len() as f64) * temp * no_seed_rng.gen::<f64>()).ceil()
                     as usize;
-            steer_towards_best(&mut next_solution, &best_so_far, num_to_change)
+            steer_towards_best(&mut next_solution, &best_so_far, num_to_change);
         }
 
-        // If condition hit, then mutate the length of the tabu list
         if mutate_tabu_len_check == 0 && tl_lower_bound_len < tl_upper_bound_len {
             c3 += 1;
-            len_tabu_list = no_seed_rng.gen_range(tl_lower_bound_len..tl_upper_bound_len)
+            len_tabu_list = no_seed_rng.gen_range(tl_lower_bound_len..tl_upper_bound_len);
         }
 
-        // Final Mutation
-        // less likely to occue later in the loop, second random f64 is to introduce some decay factor to reduce predictability
-        // if no_seed_rng.gen::<f64>() <= temp * no_seed_rng.gen_range(0.8..1.0) {
         if no_seed_rng.gen::<f64>() * no_seed_rng.gen_range(0.4..0.6)
             <= temp * no_seed_rng.gen_range(0.8..1.0)
         {
@@ -272,8 +221,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             c4 += 1;
         }
 
-        // if the new solution is infeasible or has a penalty attached to it, then we can readjust it to a better
-        // solution, such that we wouldnt have to waste iterations fixing the bad solutions
+        // Repair infeasible solutions
         next_solution.fitness = find_fitness(
             &next_solution,
             &problem_instance.penalty_value,
@@ -282,113 +230,79 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &problem_instance.distance_matrix,
         );
         let next_dist = find_distance(&next_solution, &problem_instance.distance_matrix);
-        println!("\nnext solution fitness: {}", next_solution.fitness);
-        println!("next solution distance: {}", next_dist);
+
         if next_solution.fitness > next_dist {
-            // If theres a penalty
-            println!("DEFECT\nSolution with defects, before ansl Solution:");
+            info!("DEFECT - Repairing infeasible solution");
             print_solution(&next_solution, &problem_instance);
-            next_solution = anls_destroy_and_recreate(&mut next_solution, &problem_instance)
+            next_solution = anls_destroy_and_recreate(&mut next_solution, &problem_instance);
         }
 
-        // update best so far if the next solution is the best one yet.
         if next_solution.fitness < best_so_far.fitness {
             best_so_far = next_solution.clone();
             best_so_far_iteration = iteration;
-
-            // Debugging
-            best_so_far_updates.push((iteration, next_solution.fitness))
-            // Debugging
+            best_so_far_updates.push((iteration, next_solution.fitness));
+            info!(
+                "New best at iteration {}: fitness = {:.2}",
+                iteration, best_so_far.fitness
+            );
         }
 
-        // If the best solution was NOT improved in this iteration...
+        // Stagnation logic
         if best_so_far_iteration != iteration {
-            stagnation += 1; // increase consecutive "no improvement" counter
-
-            // If we've stagnated long enough and haven't already flagged an early end...
+            stagnation += 1;
             if stagnation >= max_no_improvement && !has_ended {
-                println!(" ENDED EARLY AT ITERATION : {}", iteration);
-
-                // Snapshoot metrics at early end for later reporting
+                info!("ENDED EARLY AT ITERATION: {}", iteration);
                 ended_early_value = best_so_far.fitness;
                 has_ended = true;
                 ended_early_max_stagnation = stagnation;
                 ended_early_iteration = iteration;
-
-                // NOTE: I currently DO NOT break here (the break is commented out),
-                // so the loop continues, but I record that an early end condition occurred.
-                // This is so I can see how much more I would have gasned if I didnt stop
-            }
-            // Softer response to mid-stagnation: temporarily increase "temperature"
-            // so any SA-style acceptance or diversification becomes more permissive.
-            else if stagnation >= max_no_improvement / 2 && !has_ended {
+            } else if stagnation >= max_no_improvement / 2 && !has_ended {
                 temperature_factor = 2;
             }
         } else {
-            // We DID improve best_so_far this iteration.
-            // Record the maximum stagnation streak seen so far for stats.
             max_stagnation = max(stagnation, max_stagnation);
-
-            // Reset stagnation counters and restore normal temperature.
             stagnation = 0;
             temperature_factor = 1;
         }
 
         current_solution = next_solution;
 
-        println!("\nChosen NEXT Solution:");
+        trace!("Current solution at end of iteration:");
         print_solution(&current_solution, &problem_instance);
     }
 
-    println!("============================== END OF CALCULATION ==============================");
-
     // === FINAL REPORTING ===
-
-    // Print the best solution (and the iteration when it was achieved).
-    println!("\n\nFINAL ANSWER from itration {}:", best_so_far_iteration);
+    info!(
+        "Optimization complete. Best solution found at iteration {}",
+        best_so_far_iteration
+    );
     print_solution(&best_so_far, &problem_instance);
 
-    // Stagnation diagnostics
-    println!("\nMax Stagnation: {}", max_stagnation);
+    info!("Max Stagnation: {}", max_stagnation);
+    info!("Early end triggered: {}", has_ended);
+    if has_ended {
+        info!(
+            "Ended early at iteration {} with fitness {:.2}",
+            ended_early_iteration, ended_early_value
+        );
+        info!(
+            "Improvement after early trigger: {:.2} ({:.2}%)",
+            ended_early_value - best_so_far.fitness,
+            ((ended_early_value - best_so_far.fitness) / ended_early_value) * 100.0
+        );
+    }
 
-    // Early end diagnostics
-    println!("ended early value: {:.2}", ended_early_value);
-    println!("end early when stagnation is: {}", max_no_improvement);
-    println!("ended early stagnation: {}", ended_early_max_stagnation);
-    println!("ended early iteration: {}", ended_early_iteration);
-
-    // How many iterations were left when early-end condition triggered
-    println!("ended early itr diff: {}", RUNS - ended_early_iteration);
-
-    // Fitness delta between early-end snapshot and final best (can be negative if improved later)
-    println!(
-        "ended early finess diff: {:.2}\n",
-        ended_early_value - best_so_far.fitness
+    info!(
+        "Mutation counts - rollback: {}, steer: {}, tabu_len: {}, final: {}",
+        c1, c2, c3, c4
     );
-
-    // Relative improvement percentage from early-end snapshot to final best
-    println!(
-        "fittness diff % : {:.2}%",
-        ((ended_early_value - best_so_far.fitness) / ended_early_value) * 100.0
-    );
-
-    // Relative remaining-iteration percentage when early-end triggered
-    let runsf64: f64 = RUNS as f64;
-    let ended_early_iterationf64: f64 = ended_early_iteration as f64;
-    println!(
-        "itr diff % : {}\n",
-        ((runsf64 - ended_early_iterationf64) / runsf64) * 100.0
-    );
-
-    // how many times each mutation was applied
-    println!();
-    println!("c1, c2, c3, c4: {} , {} , {} , {}", c1, c2, c3, c4);
 
     save_to_csv(
         &best_so_far_updates,
         ended_early_iteration,
         "best_so_far.csv",
     )?;
+
     Ok(())
 }
 
