@@ -1,4 +1,3 @@
-// External crates
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sqlx::SqlitePool;
@@ -6,11 +5,8 @@ use sqlx::SqlitePool;
 // Internal module imports
 use crate::api::google_api::create_dm_google;
 use crate::api::osrm_api::{convert_to_coords, create_dm_osrm};
-use crate::{
-    core_logic::{Location, ProblemInstance},
-    evaluation::find_fitness,
-    Route,
-};
+use crate::evaluation::eval_funcs::find_fitness;
+use crate::phases::types::*;
 
 use tracing::{debug, error, info};
 
@@ -152,4 +148,3 @@ pub fn print_dist_matrix(dist_m: &Vec<Vec<f64>>) {
         debug!("{:?}", row);
     }
 }
-

@@ -1,5 +1,5 @@
 use rand::seq::IteratorRandom;
-use rand::{thread_rng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::Route;
@@ -9,7 +9,6 @@ pub fn temperature(runs: usize, iteration: usize, temperature_factor: i32) -> f6
 }
 
 pub fn steer_towards_best(current_solution: &mut Route, best_so_far: &Route, num_indices: usize) {
-    let mut rng = thread_rng();
     let seed: u64 = 12345; // Set a fixed seed
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     // Pick `num_indices` unique random positions

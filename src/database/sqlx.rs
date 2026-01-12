@@ -1,5 +1,5 @@
 use dotenv::dotenv;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use std::error::Error;
 use std::str::FromStr;
 use tracing::info;
