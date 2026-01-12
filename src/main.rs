@@ -3,22 +3,23 @@ const LOCATION_COUNT: usize = 76;
 
 // Module declarations
 mod api;
-mod core_logic;
 mod database;
 mod evaluation;
+mod phases;
 mod setup;
 mod test;
 mod utils;
 
 // Import functions from modules
-use core_logic::{
+pub use crate::phases::core_logic::{
     choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list,
-    perform_rollback, Location, ProblemInstance, Route,
+    perform_rollback,
 };
+use crate::phases::types::*;
 use database::sqlx::db_connection;
-use evaluation::{find_distance, find_fitness, penalty, trucks_by_excess, Truck};
+use evaluation::eval_funcs::*;
 use rand_chacha::ChaCha8Rng;
-use setup::{print_dist_matrix, setup};
+use setup::init::setup;
 use test::get_random_inputs;
 use utils::{steer_towards_best, temperature};
 
@@ -31,8 +32,6 @@ use std::{cmp::max, collections::VecDeque, error::Error};
 use tracing::{debug, info, span, trace, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-#[allow(dead_code)]
-const API_KEY: &str = "AIzaSyCnwKpmjbGSNixdIo8xzbkXNR2Y_MPeGoM";
 const PENALTY_VALUE: u64 = 20;
 
 #[tokio::main]
@@ -106,10 +105,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Early termination snapshot
     let mut ended_early_value = 0.0;
     let mut has_ended = false;
-    let mut ended_early_max_stagnation = 0;
     let mut ended_early_iteration = 0;
 
-    let mut rng = ChaCha8Rng::seed_from_u64(12345);
+    let mut rng = ChaCha8Rng::seed_from_u64(67);
 
     // Tabu list
     let mut len_tabu_list = 20;
@@ -254,7 +252,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!("ENDED EARLY AT ITERATION: {}", iteration);
                 ended_early_value = best_so_far.fitness;
                 has_ended = true;
-                ended_early_max_stagnation = stagnation;
                 ended_early_iteration = iteration;
             } else if stagnation >= max_no_improvement / 2 && !has_ended {
                 temperature_factor = 2;

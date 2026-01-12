@@ -1,9 +1,5 @@
-use crate::{
-    core_logic::{Location, ProblemInstance},
-    Route,
-};
+use crate::phases::types::*;
 
-// new all
 pub fn find_fitness(
     solution: &Route,
     penalty_value: &u64,
