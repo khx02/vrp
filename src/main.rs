@@ -1,8 +1,6 @@
-const RUNS: usize = 20000;
-const LOCATION_COUNT: usize = 76;
-
 // Module declarations
 mod api;
+mod config;
 mod database;
 mod evaluation;
 mod phases;
@@ -11,11 +9,12 @@ mod test;
 mod utils;
 
 // Import functions from modules
-pub use crate::phases::core_logic::{
+use crate::phases::core_logic::{
     choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list,
     perform_rollback,
 };
 use crate::phases::types::*;
+use config::constant::{LOCATION_COUNT, PENALTY_VALUE, RUNS, SEED};
 use database::sqlx::db_connection;
 use evaluation::eval_funcs::*;
 use rand_chacha::ChaCha8Rng;
@@ -31,8 +30,6 @@ use std::collections::BinaryHeap;
 use std::{cmp::max, collections::VecDeque, error::Error};
 use tracing::{debug, info, span, trace, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-
-const PENALTY_VALUE: u64 = 20;
 
 #[tokio::main]
 #[tracing::instrument(name = "VRP Solver", level = "info")]
@@ -73,7 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &mut vehicle_cap,
             &locations,
             &mut loc_cap,
-            PENALTY_VALUE,
+            PENALTY_VALUE as u64,
             "osrm",
             None,
             db_pool,
@@ -107,7 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut has_ended = false;
     let mut ended_early_iteration = 0;
 
-    let mut rng = ChaCha8Rng::seed_from_u64(67);
+    let mut rng = ChaCha8Rng::seed_from_u64(SEED as u64);
 
     // Tabu list
     let mut len_tabu_list = 20;
