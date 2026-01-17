@@ -1,1 +1,5 @@
-pub mod eval_funcs;
+pub mod fitness;
+pub mod penalty;
+
+pub use fitness::*;
+pub use penalty::*;

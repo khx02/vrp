@@ -7,8 +7,8 @@ use tracing::{debug, error, info};
 // Internal module imports
 use crate::api::google_api::create_dm_google;
 use crate::api::osrm_api::{convert_to_coords, create_dm_osrm};
-use crate::evaluation::eval_funcs::find_fitness;
-use crate::phases::phases_types::*;
+use crate::domain::types::{Location, ProblemInstance, Route};
+use crate::evaluation::fitness::find_fitness;
 use crate::setup::init_types::*;
 
 pub async fn setup(
