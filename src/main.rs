@@ -1,4 +1,3 @@
-
 use vrp::solver::tabu_search::search;
 
 #[tokio::main]

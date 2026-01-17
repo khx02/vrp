@@ -10,7 +10,7 @@ use rand_chacha::ChaCha8Rng;
 use tracing::{debug, info, span, trace, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use crate::config::constant::{LOCATION_COUNT, PENALTY_VALUE, RUNS, SEED};
+use crate::config::constant::{DISTANCE_PROVIDER, LOCATION_COUNT, PENALTY_VALUE, RUNS, SEED};
 use crate::database::sqlx::db_connection;
 use crate::domain::solution::trucks_by_excess;
 use crate::domain::types::{Location, ProblemInstance, Route, Truck};
@@ -19,6 +19,8 @@ use crate::evaluation::penalty::penalty;
 use crate::setup::init::setup;
 use crate::test::input_generator::get_random_inputs;
 use crate::utils::{steer_towards_best, temperature};
+use dotenv::dotenv;
+use std::env;
 
 use super::neighborhood::find_neighbours;
 use super::tabu::{choose_best_candidate, insert_and_adjust_tabu_list};
@@ -33,12 +35,31 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         )
         .init();
 
+    dotenv().ok();
     let db_pool = db_connection().await?;
 
     info!(
         "Starting VRP solver with {} locations and {} iterations",
         LOCATION_COUNT, RUNS
     );
+
+    // Load Google API key from env if needed
+    let google_api_key = if DISTANCE_PROVIDER == "google" {
+        match env::var("GOOGLE_API_KEY") {
+            Ok(key) => {
+                info!("Loaded Google Maps API key from .env");
+                Some(key)
+            }
+            Err(_) => {
+                eprintln!(
+                    "Error: DISTANCE_PROVIDER is 'google' but GOOGLE_API_KEY not found in .env"
+                );
+                return Err("Missing GOOGLE_API_KEY in .env".into());
+            }
+        }
+    } else {
+        None
+    };
 
     let (locations, mut loc_cap, mut vehicle_cap) = get_random_inputs(LOCATION_COUNT, "207224");
 
@@ -60,8 +81,8 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             &locations,
             &mut loc_cap,
             PENALTY_VALUE as u64,
-            "osrm",
-            None,
+            DISTANCE_PROVIDER,
+            google_api_key.as_deref(),
             db_pool,
         )
         .await
@@ -73,7 +94,8 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 
     let mut saved_solutions: Vec<Route> = vec![];
     let aspiration_threshold = 20.0;
-    let mut parent_swap: (usize, usize) = (current_solution.route.len(), current_solution.route.len());
+    let mut parent_swap: (usize, usize) =
+        (current_solution.route.len(), current_solution.route.len());
 
     let mut stagnation = 0;
     let mut max_stagnation = 0;
@@ -129,13 +151,18 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             &parent_swap,
         );
 
-        debug!("chosen swap: {:.2}, {:?}", chosen_solution.0, chosen_solution.1);
+        debug!(
+            "chosen swap: {:.2}, {:?}",
+            chosen_solution.0, chosen_solution.1
+        );
 
         let mut final_neighbour = Route {
             route: current_solution.route.clone(),
             fitness: chosen_solution.0,
         };
-        final_neighbour.route.swap(chosen_solution.1 .0, chosen_solution.1 .1);
+        final_neighbour
+            .route
+            .swap(chosen_solution.1 .0, chosen_solution.1 .1);
 
         insert_and_adjust_tabu_list(&mut tabu_list, chosen_solution.1, len_tabu_list);
 
@@ -143,7 +170,10 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             best_so_far = final_neighbour.clone();
             best_so_far_iteration = iteration;
             best_so_far_updates.push((iteration, final_neighbour.fitness));
-            info!("New best at iteration {}: fitness = {:.2}", iteration, best_so_far.fitness);
+            info!(
+                "New best at iteration {}: fitness = {:.2}",
+                iteration, best_so_far.fitness
+            );
         }
 
         parent_swap = chosen_solution.1;
@@ -161,10 +191,17 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             && saved_solutions.len() > (len_tabu_list * 4)
         {
             c1 += 1;
-            next_solution = perform_rollback(&saved_solutions, len_tabu_list, &mut next_solution, &best_so_far);
+            next_solution = perform_rollback(
+                &saved_solutions,
+                len_tabu_list,
+                &mut next_solution,
+                &best_so_far,
+            );
         } else if mutate_steer_best_check == 0 {
             c2 += 1;
-            let num_to_change = ((next_solution.route.len() as f64) * temp * no_seed_rng.gen::<f64>()).ceil() as usize;
+            let num_to_change =
+                ((next_solution.route.len() as f64) * temp * no_seed_rng.gen::<f64>()).ceil()
+                    as usize;
             steer_towards_best(&mut next_solution, &best_so_far, num_to_change);
         }
 
@@ -199,7 +236,10 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             best_so_far = next_solution.clone();
             best_so_far_iteration = iteration;
             best_so_far_updates.push((iteration, next_solution.fitness));
-            info!("New best at iteration {}: fitness = {:.2}", iteration, best_so_far.fitness);
+            info!(
+                "New best at iteration {}: fitness = {:.2}",
+                iteration, best_so_far.fitness
+            );
         }
 
         if best_so_far_iteration != iteration {
@@ -249,7 +289,11 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         c1, c2, c3, c4
     );
 
-    save_to_csv(&best_so_far_updates, ended_early_iteration, "best_so_far.csv")?;
+    save_to_csv(
+        &best_so_far_updates,
+        ended_early_iteration,
+        "best_so_far.csv",
+    )?;
 
     Ok(())
 }

@@ -7,7 +7,8 @@ pub fn find_fitness(
     vehicle_cap: &[u64],
     dm: &[Vec<f64>],
 ) -> f64 {
-    find_distance(solution, dm) + crate::evaluation::penalty::penalty(solution, penalty_value, num_of_trucks, vehicle_cap)
+    find_distance(solution, dm)
+        + crate::evaluation::penalty::penalty(solution, penalty_value, num_of_trucks, vehicle_cap)
 }
 
 pub fn find_distance(solution: &Route, dm: &[Vec<f64>]) -> f64 {

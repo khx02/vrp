@@ -2,11 +2,10 @@ use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sqlx::SqlitePool;
 use std::fs;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 // Internal module imports
-use crate::api::google_api::create_dm_google;
-use crate::api::osrm_api::{convert_to_coords, create_dm_osrm};
+use crate::distance::matrix::create_dm;
 use crate::domain::types::{Location, ProblemInstance, Route};
 use crate::evaluation::fitness::find_fitness;
 use crate::setup::init_types::*;
@@ -73,73 +72,6 @@ pub async fn setup(
     info!("Setup completed successfully");
 
     (problem_instance, route)
-}
-
-async fn create_dm(
-    source: &str,
-    locations: Vec<String>,
-    num_of_trucks: usize,
-    api_key: Option<&str>,
-    pool: SqlitePool,
-) -> Vec<Vec<f64>> {
-    info!(
-        "Creating distance matrix using source '{}' ({} locations, {} trucks)",
-        source,
-        locations.len(),
-        num_of_trucks
-    );
-
-    match source {
-        "google" => {
-            let api_key = api_key.expect("API key required for Google source");
-            debug!("Fetching distance matrix from Google Maps API");
-            match create_dm_google(locations, num_of_trucks, api_key).await {
-                Ok(matrix) => {
-                    info!("Successfully retrieved matrix from Google API");
-                    matrix
-                }
-                Err(e) => {
-                    error!("Google API request failed: {:?}", e);
-                    vec![vec![]]
-                }
-            }
-        }
-
-        "osrm" => {
-            let mut target_locations = locations;
-
-            // For multi-truck scenarios, repeat warehouse location
-            if num_of_trucks > 1 {
-                let warehouse = target_locations[0].clone();
-                target_locations.splice(0..0, std::iter::repeat(warehouse).take(num_of_trucks - 2));
-                debug!("Added {} repeated warehouse locations", num_of_trucks - 2);
-            }
-
-            let coords = convert_to_coords(&pool, target_locations).await;
-            debug!("Converted to {} coordinates", coords.len());
-
-            if coords.len() < 2 {
-                error!("Insufficient valid coordinates for distance matrix");
-                return vec![vec![]];
-            }
-
-            match create_dm_osrm(&coords).await {
-                Some(matrix) => {
-                    info!("Successfully retrieved matrix from OSRM");
-                    matrix
-                }
-                None => {
-                    error!("OSRM failed to return a valid distance matrix");
-                    vec![vec![]]
-                }
-            }
-        }
-
-        _ => {
-            error!("Unknown distance matrix source: {}", source);
-            vec![vec![]]
-        }
-    }
 }
 
 /// Reads the JSON file and returns a list of all MRT postal codes
