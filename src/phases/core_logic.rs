@@ -2,8 +2,8 @@ use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 
-use super::types::*;
 use crate::evaluation::eval_funcs::*;
+use crate::phases::phases_types::*;
 use crate::utils::swaps_overlap;
 use crate::VecDeque;
 

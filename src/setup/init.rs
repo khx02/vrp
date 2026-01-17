@@ -1,14 +1,15 @@
 use rand::{seq::SliceRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sqlx::SqlitePool;
+use std::fs;
+use tracing::{debug, error, info};
 
 // Internal module imports
 use crate::api::google_api::create_dm_google;
 use crate::api::osrm_api::{convert_to_coords, create_dm_osrm};
 use crate::evaluation::eval_funcs::find_fitness;
-use crate::phases::types::*;
-
-use tracing::{debug, error, info};
+use crate::phases::phases_types::*;
+use crate::setup::init_types::*;
 
 pub async fn setup(
     num_of_trucks: usize,
@@ -139,6 +140,22 @@ async fn create_dm(
             vec![vec![]]
         }
     }
+}
+
+/// Reads the JSON file and returns a list of all MRT postal codes
+pub fn get_all_mrt_postals() -> Vec<String> {
+    // Read JSON file (force panic if it fails)
+    let file_content = fs::read_to_string("mrt_data.json").expect("Failed to read mrt_data.json");
+
+    // Deserialize JSON into Vec<MRTLocation>
+    let all_mrt_postal: Vec<MRTLocation> =
+        serde_json::from_str(&file_content).expect("Failed to parse JSON");
+
+    // Extract postal codes
+    all_mrt_postal
+        .iter()
+        .map(|mrt| mrt.possible_locations[0].postal.clone())
+        .collect()
 }
 
 // Print distance matrix for debugging

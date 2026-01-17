@@ -1,2 +1,2 @@
 pub mod core_logic;
-pub mod types;
+pub mod phases_types;

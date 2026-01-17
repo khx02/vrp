@@ -9,17 +9,17 @@ mod test;
 mod utils;
 
 // Import functions from modules
-use crate::phases::core_logic::{
-    choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list,
-    perform_rollback,
-};
-use crate::phases::types::*;
 use config::constant::{LOCATION_COUNT, PENALTY_VALUE, RUNS, SEED};
 use database::sqlx::db_connection;
 use evaluation::eval_funcs::*;
+use phases::core_logic::{
+    choose_best_candidate, final_mutation, find_neighbours, insert_and_adjust_tabu_list,
+    perform_rollback,
+};
+use phases::phases_types::*;
 use rand_chacha::ChaCha8Rng;
 use setup::init::setup;
-use test::get_random_inputs;
+use test::input_generator::get_random_inputs;
 use utils::{steer_towards_best, temperature};
 
 // External crate imports
@@ -56,9 +56,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let num_of_trucks: usize = vehicle_cap.len();
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
+    println!("{:?}", loc_cap);
     if num_of_trucks > 1 {
         loc_cap.splice(0..0, std::iter::repeat(0).take(num_of_trucks - 2));
     }
+    println!("after splicing: {:?}", loc_cap);
 
     // SETUP
     let mut no_seed_rng = thread_rng();

@@ -1,43 +1,14 @@
-use std::fs;
-
+use crate::config::constant::{SEED, TRUCK_SIZES};
+use crate::setup::init::get_all_mrt_postals;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use serde::Deserialize;
-
-/// Struct to match the JSON structure
-#[derive(Debug, Deserialize)]
-struct MRTLocation {
-    #[serde(rename = "Possible Locations")]
-    possible_locations: Vec<LocationData>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LocationData {
-    #[serde(rename = "POSTAL")]
-    postal: String,
-}
-
-/// Reads the JSON file and returns a list of all MRT postal codes
-fn get_all_mrt_postals() -> Vec<String> {
-    // Read JSON file (force panic if it fails)
-    let file_content = fs::read_to_string("mrt_data.json").expect("Failed to read mrt_data.json");
-
-    // Deserialize JSON into Vec<MRTLocation>
-    let all_mrt_postal: Vec<MRTLocation> =
-        serde_json::from_str(&file_content).expect("Failed to parse JSON");
-
-    // Extract postal codes
-    all_mrt_postal
-        .iter()
-        .map(|mrt| mrt.possible_locations[0].postal.clone())
-        .collect()
-}
+use tracing::info;
 
 /// Generates a list of random unique locations excluding the warehouse
 fn random_location_generator(list_size: usize, warehouse: &str) -> Vec<String> {
     let all_postal = get_all_mrt_postals();
     // let mut rng = rand::thread_rng();
-    let seed: u64 = 12345; // Set a fixed seed
+    let seed: u64 = SEED as u64;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     // let mut locations = vec![format!("{} Singapore", warehouse)];
     let mut locations = vec![format!("{}", warehouse)];
@@ -59,7 +30,7 @@ fn random_location_generator(list_size: usize, warehouse: &str) -> Vec<String> {
 /// Generates random capacities for each location (excluding warehouse)
 fn random_capacity_generator(locations: &[String]) -> Vec<u64> {
     // let mut rng = rand::thread_rng();
-    let seed: u64 = 12345; // Set a fixed seed
+    let seed: u64 = SEED as u64;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut capacity = vec![0]; // Warehouse always has zero capacity
 
@@ -96,20 +67,24 @@ pub fn get_random_inputs(
 ) -> (Vec<std::string::String>, Vec<u64>, Vec<u64>) {
     // Generate locations
     let locations = random_location_generator(no_of_locations, warehouse);
-    println!("Generated Locations: {:?}", locations);
+    info!("Generated Locations: {:?}", locations);
 
     // Generate capacities
     let location_capacities = random_capacity_generator(&locations);
-    println!("Generated Capacities: {:?}", location_capacities);
+    info!("Generated Capacities: {:?}", location_capacities);
 
     // Generate vehicle capacities
-    let base_vehicle_cap = vec![1_000_000, 500_000];
+    let base_vehicle_cap: Vec<u64> = Vec::from(TRUCK_SIZES)
+        .into_iter()
+        .map(|x| x as u64)
+        .collect();
     let (vehicle_cap, num_vehicles) =
         vehicle_cap_generator(&location_capacities, &base_vehicle_cap);
-    println!(
+    info!(
         "Generated Vehicle Capacities: {:?}, Number of Vehicles: {}",
         vehicle_cap, num_vehicles
     );
+    println!("veh cap: {:?}", vehicle_cap);
 
     (locations, location_capacities, vehicle_cap)
 }

@@ -1,4 +1,4 @@
-use crate::phases::types::*;
+use crate::phases::phases_types::*;
 
 pub fn find_fitness(
     solution: &Route,
