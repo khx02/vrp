@@ -1,0 +1,14 @@
+# docker-compose.yml
+services:
+  osrm:
+    build: .
+    container_name: osrm-sg
+    ports:
+      - "6000:5000"
+    restart: unless-stopped
+    # Optional: healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/route/v1/driving/101.6897,3.1390;101.7000,3.1400"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
