@@ -227,14 +227,14 @@ pub async fn convert_to_coords(pool: &SqlitePool, locations: Vec<String>) -> Vec
     let token: String = match get_onemap_token(pool).await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Failed to get OneMap token: {}", e);
+            error!("Failed to get OneMap token: {}", e);
             return vec![];
         }
     };
     for pc in &locations {
         match get_coordinates_from_postal(&pc, &token).await {
             Some((lat, lon)) => coords.push((lat, lon)),
-            None => eprintln!("Could not find coordinates for postal code: {}", pc),
+            None => error!("Could not find coordinates for postal code: {}", pc),
         }
     }
     info!("coords: {:?}", &coords);
@@ -256,28 +256,28 @@ async fn get_coordinates_from_postal(postal_code: &str, access_token: &str) -> O
     {
         Ok(resp) => resp,
         Err(e) => {
-            eprintln!("Request failed for {postal_code}: {e}");
+            error!("Request failed for {postal_code}: {e}");
             return None;
         }
     };
     let text = match response.text().await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Failed to read response body: {e}");
+            error!("Failed to read response body: {e}");
             return None;
         }
     };
     let json: Value = match serde_json::from_str(&text) {
         Ok(js) => js,
         Err(e) => {
-            eprintln!("JSON parse error: {e}");
-            eprintln!("Raw response: {}", text);
+            error!("JSON parse error: {e}");
+            error!("Raw response: {}", text);
             return None;
         }
     };
     let results = json["results"].as_array()?;
     if results.is_empty() {
-        eprintln!("No results found for postal code: {postal_code}");
+        error!("No results found for postal code: {postal_code}");
         return None;
     }
     let lat = results[0]["LATITUDE"].as_str()?.parse::<f64>().ok()?;

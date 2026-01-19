@@ -7,16 +7,12 @@ use tracing::info;
 /// Generates a list of random unique locations excluding the warehouse
 fn random_location_generator(list_size: usize, warehouse: &str) -> Vec<String> {
     let all_postal = get_all_mrt_postals();
-    // let mut rng = rand::thread_rng();
     let seed: u64 = SEED as u64;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    // let mut locations = vec![format!("{} Singapore", warehouse)];
     let mut locations = vec![format!("{}", warehouse)];
 
     while locations.len() < list_size + 1 {
-        // +1 to include warehouse
         let rand_index = rng.gen_range(0..all_postal.len());
-        // let new_loc = format!("{} Singapore", all_postal[rand_index]);
         let new_loc = format!("{}", all_postal[rand_index]);
 
         if !locations.contains(&new_loc) {
@@ -29,7 +25,6 @@ fn random_location_generator(list_size: usize, warehouse: &str) -> Vec<String> {
 
 /// Generates random capacities for each location (excluding warehouse)
 fn random_capacity_generator(locations: &[String]) -> Vec<u64> {
-    // let mut rng = rand::thread_rng();
     let seed: u64 = SEED as u64;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut capacity = vec![0]; // Warehouse always has zero capacity
@@ -44,16 +39,15 @@ fn random_capacity_generator(locations: &[String]) -> Vec<u64> {
 
 /// Generates vehicle capacities based on total demand
 fn vehicle_cap_generator(capacity: &[u64], base1_vcap: &[u64]) -> (Vec<u64>, usize) {
-    let base_sum: u64 = base1_vcap.iter().sum(); // Total base vehicle capacity
-    let cap_sum: u64 = capacity.iter().sum(); // Total demand
-    let factor = (cap_sum / base_sum) + 1; // How many times we need to repeat the base capacities
+    let base_sum: u64 = base1_vcap.iter().sum();
+    let cap_sum: u64 = capacity.iter().sum();
+    let factor = (cap_sum / base_sum) + 1;
 
-    // Repeat base capacities until we meet the total required capacity
     let vehicle_cap: Vec<u64> = base1_vcap
         .iter()
         .cloned()
-        .cycle() // Repeat elements infinitely
-        .take(base1_vcap.len() * factor as usize) // Take enough elements
+        .cycle()
+        .take(base1_vcap.len() * factor as usize)
         .collect();
 
     let num_vehicles = vehicle_cap.len();
@@ -61,19 +55,17 @@ fn vehicle_cap_generator(capacity: &[u64], base1_vcap: &[u64]) -> (Vec<u64>, usi
     (vehicle_cap, num_vehicles)
 }
 
-pub fn get_random_inputs(
+/// Generate random locations, capacities, and vehicle capacities for testing
+pub fn generate_random_inputs(
     no_of_locations: usize,
     warehouse: &str,
-) -> (Vec<std::string::String>, Vec<u64>, Vec<u64>) {
-    // Generate locations
+) -> (Vec<String>, Vec<u64>, Vec<u64>) {
     let locations = random_location_generator(no_of_locations, warehouse);
     info!("Generated Locations: {:?}", locations);
 
-    // Generate capacities
     let location_capacities = random_capacity_generator(&locations);
     info!("Generated Capacities: {:?}", location_capacities);
 
-    // Generate vehicle capacities
     let base_vehicle_cap: Vec<u64> = Vec::from(TRUCK_SIZES)
         .into_iter()
         .map(|x| x as u64)
@@ -84,7 +76,6 @@ pub fn get_random_inputs(
         "Generated Vehicle Capacities: {:?}, Number of Vehicles: {}",
         vehicle_cap, num_vehicles
     );
-    println!("veh cap: {:?}", vehicle_cap);
 
     (locations, location_capacities, vehicle_cap)
 }

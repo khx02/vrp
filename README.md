@@ -10,27 +10,44 @@ Vehicle Routing Problem (VRP) solver written in Rust. It builds distance matrice
 │   │   └── vrp-solver.rs        # thin binary entrypoint
 │   ├── lib.rs                   # library surface (re-exports)
 │   ├── domain/                  # core data types
-│   │   ├── types.rs             # Location, Route, Truck, ProblemInstance
+│   │   ├── types.rs             # Location, Route, Truck, ProblemInstance, MRTLocation
 │   │   └── solution.rs          # truck helpers
 │   ├── distance/                # distance matrix orchestration
 │   │   ├── matrix.rs            # orchestrator (provider selection)
+│   │   ├── mod.rs
 │   │   └── providers/
+│   │       ├── mod.rs
 │   │       ├── google.rs        # Google Maps API
-│   │       └── osrm.rs          # OSRM + OneMap token
+│   │       └── osrm.rs          # OSRM + OneMap token caching
 │   ├── solver/
-│   │   └── tabu_search/         # metaheuristic implementation
+│   │   ├── mod.rs
+│   │   └── tabu_search/
+│   │       ├── mod.rs
 │   │       ├── search.rs        # main search loop
-│   │       ├── neighborhood.rs  # move generation
-│   │       └── tabu.rs          # tabu list logic
-│   ├── evaluation/              # scoring
+│   │       ├── neighbourhood.rs # move generation (2-swap)
+│   │       ├── tabu.rs          # tabu list & aspiration
+│   │       ├── diversification.rs  # rollback, mutation, steer
+│   │       └── repair.rs        # ALNS destroy & recreate
+│   ├── evaluation/              # scoring & penalties
+│   │   ├── mod.rs
 │   │   ├── fitness.rs
 │   │   └── penalty.rs
 │   ├── setup/                   # instance/distance-matrix build
+│   │   ├── mod.rs
 │   │   └── init.rs
-│   ├── database/                # SQLite pool
-│   ├── config.rs                # constants (including DISTANCE_PROVIDER)
-│   └── test/input_generator.rs  # synthetic inputs
+│   ├── database/                # SQLite pool & token cache
+│   │   ├── mod.rs
+│   │   └── sqlx.rs
+│   ├── fixtures/                # test data generators
+│   │   ├── mod.rs
+│   │   └── data_generator.rs
+│   ├── config.rs                # constants (DISTANCE_PROVIDER, etc.)
+│   ├── lib.rs                   # library entry point
+│   ├── main.rs                  # binary entry point
+│   └── utils.rs                 # utility functions
 ├── scripts/visualize.py         # plot best_so_far.csv
+├── mrt_data.json                # MRT postal codes
+├── osrm-sg/                     # OSRM data files
 └── best_so_far.csv              # solver output sample
 ```
 

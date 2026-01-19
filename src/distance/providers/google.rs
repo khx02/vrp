@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::task;
+use tracing::error;
 
 const FACTOR: usize = 10;
 
@@ -36,7 +37,7 @@ pub async fn create_dm_google(
                 {
                     Ok(matrix) => matrix,
                     Err(e) => {
-                        eprintln!("Error fetching distance matrix: {}", e);
+                        error!("Error fetching distance matrix: {}", e);
                         vec![vec![0.0; FACTOR]; FACTOR]
                     }
                 }

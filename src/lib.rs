@@ -3,7 +3,7 @@ pub mod database;
 pub mod distance;
 pub mod domain;
 pub mod evaluation;
+pub mod fixtures;
 pub mod setup;
 pub mod solver;
-pub mod test;
 pub mod utils;

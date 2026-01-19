@@ -6,9 +6,8 @@ use tracing::{debug, info};
 
 // Internal module imports
 use crate::distance::matrix::create_dm;
-use crate::domain::types::{Location, ProblemInstance, Route};
+use crate::domain::types::{Location, MRTLocation, ProblemInstance, Route};
 use crate::evaluation::fitness::find_fitness;
-use crate::setup::init_types::*;
 
 pub async fn setup(
     num_of_trucks: usize,

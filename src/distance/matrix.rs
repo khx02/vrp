@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use tracing::info;
+use tracing::{error, info};
 
 use super::providers::{convert_to_coords, create_dm_google, create_dm_osrm};
 
@@ -27,7 +27,7 @@ pub async fn create_dm(
                     matrix
                 }
                 Err(e) => {
-                    eprintln!("Google API request failed: {:?}", e);
+                    error!("Google API request failed: {:?}", e);
                     vec![vec![]]
                 }
             }
@@ -44,7 +44,7 @@ pub async fn create_dm(
             let coords = convert_to_coords(&pool, target_locations).await;
 
             if coords.len() < 2 {
-                eprintln!("Insufficient valid coordinates for distance matrix");
+                error!("Insufficient valid coordinates for distance matrix");
                 return vec![vec![]];
             }
 
@@ -54,14 +54,14 @@ pub async fn create_dm(
                     matrix
                 }
                 None => {
-                    eprintln!("OSRM failed to return a valid distance matrix");
+                    error!("OSRM failed to return a valid distance matrix");
                     vec![vec![]]
                 }
             }
         }
 
         _ => {
-            eprintln!("Unknown distance matrix source: {}", source);
+            error!("Unknown distance matrix source: {}", source);
             vec![vec![]]
         }
     }

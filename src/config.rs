@@ -5,4 +5,5 @@ pub mod constant {
     pub(crate) const PENALTY_VALUE: usize = 20;
     pub(crate) const TRUCK_SIZES: [usize; 2] = [1_000_000, 500_000];
     pub(crate) const DISTANCE_PROVIDER: &str = "osrm"; // "osrm" or "google"
+    pub(crate) const WAREHOUSE: &str = "207224"; // warehouse postal code
 }
