@@ -1,9 +1,10 @@
 use std::cmp::max;
 use std::error::Error;
+use std::time::Instant;
 
 use csv::Writer;
 use rand::Rng;
-use tracing::{debug, info, span, trace, warn, Level};
+use tracing::{debug, info, span, warn, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::config::constant::{DISTANCE_PROVIDER, LOCATION_COUNT, PENALTY_VALUE, RUNS, WAREHOUSE};
@@ -145,6 +146,7 @@ fn perform_iteration(
             "New best at iteration {}: fitness = {:.2}",
             iteration, state.best_so_far.fitness
         );
+        print_solution(&state.best_so_far, problem_instance);
     }
 
     state.parent_swap = chosen_solution.1;
@@ -187,6 +189,7 @@ fn perform_iteration(
             "New best at iteration {}: fitness = {:.2}",
             iteration, state.best_so_far.fitness
         );
+        print_solution(&state.best_so_far, problem_instance);
     }
 
     // Handle stagnation and early termination
@@ -207,9 +210,6 @@ fn perform_iteration(
     }
 
     state.current_solution = next_solution;
-
-    trace!("Current solution at end of iteration:");
-    print_solution(&state.current_solution, problem_instance);
 }
 
 /// Apply diversification strategies (rollback, steer, tabu length adjustment, final mutation)
@@ -294,6 +294,8 @@ fn report_final_stats(state: &SearchState) {
 }
 
 pub async fn run() -> Result<(), Box<dyn Error>> {
+    let program_start = Instant::now();
+
     init_tracing_and_env()?;
     let db_pool = db_connection().await?;
 
@@ -309,6 +311,7 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     let num_of_trucks: usize = vehicle_cap.len();
     let (vehicle_cap, location_capacities) = process_inputs(vehicle_cap, loc_cap, num_of_trucks);
 
+    let setup_start = Instant::now();
     let (problem_instance, initial_solution) = {
         let span = span!(Level::INFO, "setup");
         let _guard = span.enter();
@@ -324,6 +327,11 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         )
         .await
     };
+    let setup_elapsed = setup_start.elapsed().as_secs_f64();
+    println!(
+        "[TIME] Setup phase (initialise distance matrix + initial solution): {:.2} seconds",
+        setup_elapsed
+    );
 
     // Initialize search state
     let max_no_improvement = calculate_max_no_improvement(locations.len());
@@ -337,6 +345,7 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     info!("INITIAL SOLUTION:");
     print_solution(&initial_solution, &problem_instance);
 
+    let search_start = Instant::now();
     let loop_span = span!(Level::INFO, "main_search_loop", total_iterations = RUNS);
     let _loop_guard = loop_span.enter();
 
@@ -355,9 +364,40 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             aspiration_threshold,
         );
     }
+    let search_elapsed = search_start.elapsed().as_secs_f64();
+    println!("[TIME] Search loop phase: {:.2} seconds", search_elapsed);
 
     print_solution(&state.best_so_far, &problem_instance);
     report_final_stats(&state);
+
+    let program_elapsed = program_start.elapsed().as_secs_f64();
+
+    // Print nice summary of final solution
+    let partition = partition_solution(&state.best_so_far, &problem_instance.vehicle_capacities);
+    let trucks_used = partition.iter().filter(|(_, load, _)| *load > 0).count();
+    let trucks_available = problem_instance.vehicle_capacities.len();
+
+    println!("\n=== FINAL SOLUTION SUMMARY ===");
+    println!(
+        "Used trucks: {} / {} available",
+        trucks_used, trucks_available
+    );
+
+    for (truck_idx, (route, load, capacity)) in partition.iter().enumerate() {
+        let truck_num = truck_idx + 1;
+        let route_str = route
+            .iter()
+            .map(|loc| loc.to_string())
+            .collect::<Vec<_>>()
+            .join(" → ");
+        let percentage = (*load as f64 / *capacity as f64) * 100.0;
+        println!(
+            "Truck {} (Load: {:.1}% Capacity: {}): {}",
+            truck_num, percentage, capacity, route_str
+        );
+    }
+
+    println!("\n[TIME] Total runtime: {:.2} seconds", program_elapsed);
 
     save_to_csv(
         &state.best_so_far_updates,
@@ -407,21 +447,23 @@ fn print_solution(solution: &Route, problem_instance: &ProblemInstance) {
         &problem_instance.vehicle_capacities,
     );
 
-    if pen > 0.0 {
-        warn!(
-            "Distance: {:.2}, Fitness: {:.2}, Penalty: {:.2}",
-            dist, fitness, pen
-        );
-    } else {
-        info!(
-            "Distance: {:.2}, Fitness: {:.2}, Penalty: {:.2}",
-            dist, fitness, pen
-        );
+    // Build consolidated output
+    let loc_indices: Vec<usize> = solution.route.iter().map(|loc| loc.index).collect();
+    let mut output = String::new();
+    output.push_str(&format!(
+        "Distance: {:.2}, Fitness: {:.2}, Penalty: {:.2}\n",
+        dist, fitness, pen
+    ));
+    output.push_str(&format!("Solution route: {:?}\n", loc_indices));
+    for (route, load, capacity) in partition {
+        output.push_str(&format!("{} / {} : {:?}\n", load, capacity, route));
     }
 
-    print_location_array(solution);
-    for (route, load, capacity) in partition {
-        debug!("{} / {} : {:?}", load, capacity, route)
+    // Log as single chunk
+    if pen > 0.0 {
+        warn!("{}", output.trim_end());
+    } else {
+        info!("{}", output.trim_end());
     }
 }
 
@@ -448,9 +490,4 @@ fn partition_solution(solution: &Route, vehicle_capacity: &[u64]) -> Vec<(Vec<us
         partition.push((r.clone(), *load, vehicle_capacity[ind]));
     }
     partition
-}
-
-fn print_location_array(solution: &Route) {
-    let loc_indices: Vec<usize> = solution.route.iter().map(|loc| loc.index).collect();
-    debug!("Solution route: {:?}", loc_indices)
 }
