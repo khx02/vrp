@@ -5,7 +5,7 @@ use crate::domain::types::{Location, ProblemInstance, Route, Truck};
 use crate::evaluation::fitness::find_fitness;
 
 /// ALNS-style destroy and repair: removes infeasible locations and reinserts them
-pub fn anls_destroy_and_recreate(solution: &mut Route, pi: &ProblemInstance) -> Route {
+pub fn alns_destroy_and_recreate(solution: &mut Route, pi: &ProblemInstance) -> Route {
     let mut trucks = trucks_by_excess(solution, pi);
     let mut destroyed_locations_max_heap = BinaryHeap::new();
 

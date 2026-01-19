@@ -15,7 +15,7 @@ use crate::evaluation::penalty::penalty;
 use crate::fixtures::data_generator::generate_random_inputs;
 use crate::setup::init::setup;
 use crate::solver::tabu_search::diversification::{final_mutation, perform_rollback};
-use crate::solver::tabu_search::repair::anls_destroy_and_recreate;
+use crate::solver::tabu_search::repair::alns_destroy_and_recreate;
 use crate::utils::{steer_towards_best, temperature};
 use dotenv::dotenv;
 use std::env;
@@ -175,7 +175,7 @@ fn perform_iteration(
     if next_solution.fitness > next_dist {
         info!("DEFECT - Repairing infeasible solution");
         print_solution(&next_solution, problem_instance);
-        next_solution = anls_destroy_and_recreate(&mut next_solution, problem_instance);
+        next_solution = alns_destroy_and_recreate(&mut next_solution, problem_instance);
     }
 
     // Update best if improved
