@@ -377,7 +377,22 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     let trucks_used = partition.iter().filter(|(_, load, _)| *load > 0).count();
     let trucks_available = problem_instance.vehicle_capacities.len();
 
+    let final_distance = find_distance(&state.best_so_far, &problem_instance.distance_matrix);
+    let final_fitness = state.best_so_far.fitness;
+    let final_penalty = penalty(
+        &state.best_so_far,
+        &problem_instance.penalty_value,
+        &problem_instance.num_of_trucks,
+        &problem_instance.vehicle_capacities,
+    );
+
     println!("\n=== FINAL SOLUTION SUMMARY ===");
+    println!("Distance (non -ve): {:.2}", final_distance);
+    println!("Penalty (non -ve): {:.2}", final_penalty);
+    println!(
+        "Fitness (Distance + Penalty, Lower better): {:.2}",
+        final_fitness
+    );
     println!(
         "Used trucks: {} / {} available",
         trucks_used, trucks_available
@@ -399,29 +414,21 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 
     println!("\n[TIME] Total runtime: {:.2} seconds", program_elapsed);
 
-    save_to_csv(
-        &state.best_so_far_updates,
-        state.ended_early_iteration,
-        "best_so_far.csv",
-    )?;
+    save_to_csv(&state.best_so_far_updates, "best_so_far.csv")?;
 
     Ok(())
 }
 
-fn save_to_csv(
-    best_so_far_updates: &[(usize, f64)],
-    ended_early_iteration: usize,
-    filename: &str,
-) -> Result<(), Box<dyn Error>> {
+fn save_to_csv(best_so_far_updates: &[(usize, f64)], filename: &str) -> Result<(), Box<dyn Error>> {
     let mut wtr = Writer::from_path(filename)?;
 
-    wtr.write_record(["iteration", "new_best_so_far", "ended_early_iteration"])?;
+    wtr.write_record(["improvement_number", "iteration", "fitness"])?;
 
-    for (iteration, value) in best_so_far_updates {
+    for (idx, (iteration, value)) in best_so_far_updates.iter().enumerate() {
         wtr.write_record([
+            (idx + 1).to_string(),
             iteration.to_string(),
             value.to_string(),
-            ended_early_iteration.to_string(),
         ])?;
     }
 
