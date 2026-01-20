@@ -45,10 +45,7 @@ Vehicle Routing Problem (VRP) solver written in Rust. It builds distance matrice
 │   ├── lib.rs                   # library entry point
 │   ├── main.rs                  # binary entry point
 │   └── utils.rs                 # utility functions
-├── scripts/visualize.py         # plot best_so_far.csv
-├── mrt_data.json                # MRT postal codes
-├── osrm-sg/                     # OSRM data files
-└── best_so_far.csv              # solver output sample
+├── osrm/                        # OSRM backend (docker)
 ```
 
 ## Dependencies
