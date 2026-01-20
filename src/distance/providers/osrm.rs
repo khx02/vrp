@@ -14,52 +14,39 @@ struct OneMapTokenResponse {
     expiry_timestamp: String,
 }
 
-// Fetch a fresh token from OneMap API
 async fn fetch_onemap_token() -> Result<(String, i64), Box<dyn Error>> {
-    dotenv().ok(); // Load .env if present
-
+    dotenv().ok();
     let email = env::var("ONE_MAP_EMAIL")?;
-    let password = env::var("ONE_MAP_PASS")?; // or ONE_MAP_PASSWORD
-
+    let password = env::var("ONE_MAP_PASS")?;
     let url = "https://www.onemap.gov.sg/api/auth/post/getToken";
-
     let client = Client::new();
-
     let payload = serde_json::json!({
         "email": email,
         "password": password
     });
     trace!("Fetching OneMap token from {}", url);
-
     let response = client
         .post(url)
         .header("Content-Type", "application/json")
         .json(&payload)
         .send()
         .await?;
-
     if !response.status().is_success() {
         error!("OneMap auth failed with status: {}", response.status());
         return Err(format!("OneMap auth failed: {}", response.status()).into());
     }
-
     let json: OneMapTokenResponse = response.json().await?;
     let expiry_timestamp: i64 = json.expiry_timestamp.parse()?;
-
     info!("Successfully obtained OneMap access token");
     Ok((json.access_token, expiry_timestamp))
 }
 
-// Get token, checking DB first; fetch and store if expired or missing
 async fn get_onemap_token(pool: &SqlitePool) -> Result<String, Box<dyn Error>> {
-    // Check DB for existing token
     let row: Option<(String, i64)> =
         sqlx::query_as("SELECT token, expiry FROM api_tokens WHERE service = 'onemap'")
             .fetch_optional(pool)
             .await?;
-
     let current_time = Utc::now().timestamp();
-
     if let Some((token, expiry)) = row {
         if current_time < expiry {
             info!("Using cached OneMap token from DB");
@@ -70,11 +57,7 @@ async fn get_onemap_token(pool: &SqlitePool) -> Result<String, Box<dyn Error>> {
     } else {
         info!("No existing OneMap token in DB, fetching first time");
     }
-
-    // Fetch new token if missing or expired
     let (new_token, expiry_timestamp) = fetch_onemap_token().await?;
-
-    // Store in DB
     sqlx::query(
         r#"
         INSERT OR REPLACE INTO api_tokens (service, token, expiry)
@@ -85,39 +68,27 @@ async fn get_onemap_token(pool: &SqlitePool) -> Result<String, Box<dyn Error>> {
     .bind(expiry_timestamp)
     .execute(pool)
     .await?;
-
     info!(
         "Stored new OneMap token in DB with expiry: {}",
         expiry_timestamp
     );
-
     Ok(new_token)
 }
 
-// 1. OSRM Distance Matrix Function
 pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
-    dotenv().ok(); // Load .env (harmless, for consistency)
-
+    dotenv().ok();
     if coords.is_empty() {
         error!("create_dm_osrm: coords are empty");
         return None;
     }
-
-    // Check for OSRM-specific env vars (optional, for self-hosted/custom)
     let base_url = env::var("OSRM_BASE_URL")
         .unwrap_or_else(|_| "https://router.project-osrm.org/table/v1/driving".to_string());
-
     let is_public_osrm = base_url.contains("router.project-osrm.org");
-
-    // Format coords as "lon,lat;lon,lat;..."
     let coord_str = coords
         .iter()
-        // OSRM wants longitude,latitude in that order
         .map(|(lat, lon)| format!("{},{}", lon, lat))
         .collect::<Vec<String>>()
         .join(";");
-
-    // URL length check (OSRM public has ~8k char limit)
     let url = format!("{}/{}?annotations=distance", base_url, coord_str);
     if url.len() > 8000 {
         warn!(
@@ -126,29 +97,20 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
         );
         return None;
     }
-
     trace!("Formatted coordinate string: {}", coord_str);
     debug!("Built OSRM URL: {} ({} chars)", url, url.len());
-
     let client = Client::new();
-
     info!("Sending GET request to OSRM ({} locations)", coords.len());
-
-    // Build request — conditionally add User-Agent only for public OSRM
     let mut request_builder = client.get(&url);
-
     if is_public_osrm {
         let user_agent = env::var("ONE_MAP_EMAIL")
             .map(|email| format!("VRP-Solver/1.0 ({})", email.trim()))
             .unwrap_or_else(|_| "VRP-Solver/1.0 (no-email-configured@example.com)".to_string());
-
         request_builder = request_builder.header("User-Agent", &user_agent);
         info!("Using public OSRM — added User-Agent: {}", &user_agent);
     } else {
         info!("Using local/self-hosted OSRM — no User-Agent header required");
     }
-
-    // Make the request with timeout
     let response = match request_builder
         .timeout(std::time::Duration::from_secs(30))
         .send()
@@ -181,8 +143,6 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
             return None;
         }
     };
-
-    // Convert response to text
     let text = match response.text().await {
         Ok(t) => {
             trace!("Response size: {} bytes", t.len());
@@ -200,8 +160,6 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
             return None;
         }
     };
-
-    // Parse JSON
     let json: Value = match serde_json::from_str::<Value>(&text) {
         Ok(js) => {
             debug!(
@@ -219,7 +177,6 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
             return None;
         }
     };
-
     let distances = match json["distances"].as_array() {
         Some(arr) => {
             info!(
@@ -237,8 +194,6 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
             return None;
         }
     };
-
-    // Convert distances (in meters) to kilometers
     let matrix = distances
         .iter()
         .enumerate()
@@ -258,52 +213,41 @@ pub async fn create_dm_osrm(coords: &[(f64, f64)]) -> Option<Vec<Vec<f64>>> {
                 .collect::<Vec<f64>>()
         })
         .collect::<Vec<Vec<f64>>>();
-
     info!(
         "Successfully created distance matrix: {}x{} ({} locations)",
         matrix.len(),
         matrix[0].len(),
         coords.len()
     );
-
     Some(matrix)
 }
 
-// Convert a List of Locations (Postal Codes) into (lat, lon) Using OneMap
 pub async fn convert_to_coords(pool: &SqlitePool, locations: Vec<String>) -> Vec<(f64, f64)> {
     let mut coords = vec![];
-
     let token: String = match get_onemap_token(pool).await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Failed to get OneMap token: {}", e);
+            error!("Failed to get OneMap token: {}", e);
             return vec![];
         }
     };
-
     for pc in &locations {
         match get_coordinates_from_postal(&pc, &token).await {
             Some((lat, lon)) => coords.push((lat, lon)),
-            None => eprintln!("Could not find coordinates for postal code: {}", pc),
+            None => error!("Could not find coordinates for postal code: {}", pc),
         }
     }
     info!("coords: {:?}", &coords);
     coords
 }
 
-// OneMap's Search API. You must already have a valid access token.
 async fn get_coordinates_from_postal(postal_code: &str, access_token: &str) -> Option<(f64, f64)> {
-    // 1. Construct the OneMap "Search" endpoint with postal code
-    // Example: https://www.onemap.gov.sg/api/common/elastic/search?searchVal=200640&returnGeom=Y&getAddrDetails=Y&pageNum=1
     let url = format!(
         "https://www.onemap.gov.sg/api/common/elastic/search?searchVal={}&returnGeom=Y&getAddrDetails=Y&pageNum=1",
         postal_code
     );
-
     let client = Client::new();
     trace!("get_coordinates_from_postal: sending GET to {url}");
-
-    // 2. Send request with Authorization header
     let response = match client
         .get(&url)
         .header("Authorization", format!("Bearer {}", access_token))
@@ -312,51 +256,31 @@ async fn get_coordinates_from_postal(postal_code: &str, access_token: &str) -> O
     {
         Ok(resp) => resp,
         Err(e) => {
-            eprintln!("Request failed for {postal_code}: {e}");
+            error!("Request failed for {postal_code}: {e}");
             return None;
         }
     };
-
-    // 3. Convert response to text
     let text = match response.text().await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Failed to read response body: {e}");
+            error!("Failed to read response body: {e}");
             return None;
         }
     };
-
-    // 4. Parse JSON
     let json: Value = match serde_json::from_str(&text) {
         Ok(js) => js,
         Err(e) => {
-            eprintln!("JSON parse error: {e}");
-            eprintln!("Raw response: {}", text);
+            error!("JSON parse error: {e}");
+            error!("Raw response: {}", text);
             return None;
         }
     };
-
-    // Typically, OneMap's "Search" returns something like:
-    // {
-    //   "found": 1,
-    //   "results": [
-    //       {
-    //         "SEARCHVAL": "200640",
-    //         "LATITUDE": "1.310023",
-    //         "LONGITUDE": "103.862367",
-    //         ...
-    //       }
-    //   ]
-    // }
     let results = json["results"].as_array()?;
     if results.is_empty() {
-        eprintln!("No results found for postal code: {postal_code}");
+        error!("No results found for postal code: {postal_code}");
         return None;
     }
-
-    // 5. Extract lat/lon from the first result
     let lat = results[0]["LATITUDE"].as_str()?.parse::<f64>().ok()?;
     let lon = results[0]["LONGITUDE"].as_str()?.parse::<f64>().ok()?;
-
     Some((lat, lon))
 }

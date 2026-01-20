@@ -2,7 +2,7 @@ use rand::seq::IteratorRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::Route;
+use crate::domain::types::Route;
 
 pub fn temperature(runs: usize, iteration: usize, temperature_factor: i32) -> f64 {
     (((runs as f64) - (iteration as f64)) / (runs as f64)) * (temperature_factor as f64)

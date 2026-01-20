@@ -1,0 +1,8 @@
+# docker-compose.yml
+services:
+  osrm:
+    build: .
+    container_name: osrm-backend
+    ports:
+      - "6000:5000"
+
