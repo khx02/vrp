@@ -4,7 +4,6 @@ Vehicle Routing Problem (VRP) solver written in Rust. It builds distance matrice
 
 ## Project Layout
 ```
-├── Cargo.toml
 ├── src/
 │   ├── bin/
 │   │   └── vrp-solver.rs        # thin binary entrypoint
