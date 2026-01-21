@@ -68,7 +68,7 @@ fn process_inputs(
     debug!("Location capacities: {:?}", location_capacities);
 
     if num_of_trucks > 1 {
-        location_capacities.splice(0..0, std::iter::repeat(0).take(num_of_trucks - 2));
+        location_capacities.splice(0..0, std::iter::repeat_n(0, num_of_trucks - 2));
     }
     debug!(
         "Location capacities after splicing: {:?}",

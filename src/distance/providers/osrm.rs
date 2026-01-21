@@ -232,7 +232,7 @@ pub async fn convert_to_coords(pool: &SqlitePool, locations: Vec<String>) -> Vec
         }
     };
     for pc in &locations {
-        match get_coordinates_from_postal(&pc, &token).await {
+        match get_coordinates_from_postal(pc, &token).await {
             Some((lat, lon)) => coords.push((lat, lon)),
             None => error!("Could not find coordinates for postal code: {}", pc),
         }

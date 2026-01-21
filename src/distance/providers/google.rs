@@ -99,9 +99,7 @@ fn pad_locations(locations: Vec<String>) -> (Vec<String>, usize) {
 
     if last_set > 0 {
         let first_location = locations[0].clone();
-        let padding: Vec<String> = std::iter::repeat(first_location)
-            .take(padding_needed)
-            .collect();
+        let padding: Vec<String> = std::iter::repeat_n(first_location, padding_needed).collect();
         padded_locations.extend(padding);
     }
 
