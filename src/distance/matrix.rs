@@ -38,7 +38,7 @@ pub async fn create_dm(
 
             if num_of_trucks > 1 {
                 let warehouse = target_locations[0].clone();
-                target_locations.splice(0..0, std::iter::repeat(warehouse).take(num_of_trucks - 2));
+                target_locations.splice(0..0, std::iter::repeat_n(warehouse, num_of_trucks - 2));
             }
 
             let coords = convert_to_coords(&pool, target_locations).await;

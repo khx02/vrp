@@ -27,5 +27,5 @@ pub async fn db_connection() -> Result<SqlitePool, Box<dyn Error>> {
     .execute(&pool)
     .await?;
 
-    return Ok(pool);
+    Ok(pool);
 }

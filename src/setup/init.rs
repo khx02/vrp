@@ -10,7 +10,6 @@ use crate::domain::types::{Location, MRTLocation, ProblemInstance, Route};
 use crate::evaluation::fitness::find_fitness;
 
 pub async fn setup(
-    num_of_trucks: usize,
     vehicle_cap: &mut [u64],
     pre_locations: &[String],
     loc_capacity: &mut Vec<u64>,
@@ -19,6 +18,7 @@ pub async fn setup(
     api_key: Option<&str>,
     pool: SqlitePool,
 ) -> (ProblemInstance, Route) {
+    let num_of_trucks = vehicle_cap.len();
     info!(
         "Starting setup with {} trucks, {} locations",
         num_of_trucks,
@@ -32,7 +32,7 @@ pub async fn setup(
 
     // Insert dummy warehouse demands for multi-truck scenarios
     if num_of_trucks > 1 {
-        loc_capacity.splice(0..0, std::iter::repeat(0).take(num_of_trucks - 2));
+        loc_capacity.splice(0..0, std::iter::repeat_n(0, num_of_trucks - 2));
     }
 
     let problem_instance = ProblemInstance {

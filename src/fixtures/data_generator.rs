@@ -50,7 +50,7 @@ fn random_location_generator(list_size: usize, warehouse: &str) -> Vec<String> {
 
     while customers.len() < list_size {
         let rand_index = rng.gen_range(0..all_postal.len());
-        let new_loc = format!("{}", all_postal[rand_index]);
+        let new_loc = format!("{}", all_postal[rand_index].to_string());
 
         if new_loc != warehouse && !customers.contains(&new_loc) {
             customers.push(new_loc);

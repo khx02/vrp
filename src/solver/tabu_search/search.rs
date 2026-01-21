@@ -316,7 +316,6 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         let span = span!(Level::INFO, "setup");
         let _guard = span.enter();
         setup(
-            num_of_trucks,
             &mut vehicle_cap.clone(),
             &locations,
             &mut location_capacities.clone(),

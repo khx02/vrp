@@ -81,7 +81,7 @@ pub async fn create_dm_google(
         let truck_rows = vec![truck_row.clone(); partition_counter];
 
         for row in dm.iter_mut() {
-            row.splice(0..0, std::iter::repeat(row[0]).take(partition_counter));
+            row.splice(0..0, std::iter::repeat_n(row[0], partition_counter));
         }
 
         dm.splice(0..0, truck_rows.into_iter());
