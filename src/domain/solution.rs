@@ -2,7 +2,8 @@ use std::cmp::Reverse;
 
 use crate::domain::types::{ProblemInstance, Route, Truck};
 
-pub fn find_sorted_capacities2(solution: &Route, num_of_trucks: &usize) -> Vec<Truck> {
+/// Partition a route into per-truck segments using depot markers and sort by load (descending).
+pub fn partition_trucks_sorted_by_load(solution: &Route, num_of_trucks: &usize) -> Vec<Truck> {
     let mut trucks: Vec<Truck> = vec![];
     let r = &solution.route;
 
@@ -38,8 +39,9 @@ pub fn find_sorted_capacities2(solution: &Route, num_of_trucks: &usize) -> Vec<T
     trucks
 }
 
+/// Partition a route, attach capacities, compute excess, and sort by excess (descending).
 pub fn trucks_by_excess(solution: &Route, pi: &ProblemInstance) -> Vec<Truck> {
-    let mut trucks = find_sorted_capacities2(solution, &pi.num_of_trucks);
+    let mut trucks = partition_trucks_sorted_by_load(solution, &pi.num_of_trucks);
     for (ind, vc) in pi.vehicle_capacities.iter().enumerate() {
         if let Some(truck) = trucks.get_mut(ind) {
             truck.capacity = *vc;
