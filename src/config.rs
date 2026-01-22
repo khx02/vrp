@@ -8,8 +8,6 @@ pub mod constant {
     pub(crate) const CUSTOMER_CSV_PATH: &str = "data/customers.csv"; // customer postal codes
 
     // Fixed fleet configuration - number of trucks is derived from array length
-    pub(crate) const TRUCK_CAPACITIES: [u64; 10] = [
-        1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000,
-        1_000_000, 1_000_000,
-    ];
+    pub(crate) const TRUCK_CAPACITIES: [u64; 5] =
+        [1_000_000, 750_000, 1_000_000, 1_000_000, 1_000_000];
 }

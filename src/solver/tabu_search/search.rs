@@ -1,9 +1,12 @@
 use std::cmp::max;
 use std::error::Error;
+use std::fs;
+use std::path::Path;
 use std::time::Instant;
 
 use csv::Writer;
 use rand::Rng;
+use serde_json::json;
 use tracing::{debug, info, span, warn, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -12,7 +15,7 @@ use crate::database::sqlx::db_connection;
 use crate::domain::types::{ProblemInstance, Route, SearchState};
 use crate::evaluation::fitness::{find_distance, find_fitness};
 use crate::evaluation::penalty::penalty;
-use crate::fixtures::data_generator::generate_random_inputs;
+use crate::fixtures::data_generator::load_inputs_from_csv;
 use crate::setup::init::setup;
 use crate::solver::tabu_search::diversification::{final_mutation, perform_rollback};
 use crate::solver::tabu_search::repair::alns_destroy_and_recreate;
@@ -61,19 +64,13 @@ fn load_google_api_key() -> Result<Option<String>, Box<dyn Error>> {
 /// Process input locations and capacities (sort vehicles, splice dummy warehouses)
 fn process_inputs(
     mut vehicle_cap: Vec<u64>,
-    mut location_capacities: Vec<u64>,
-    num_of_trucks: usize,
+    location_capacities: Vec<u64>,
 ) -> (Vec<u64>, Vec<u64>) {
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
     debug!("Location capacities: {:?}", location_capacities);
 
-    if num_of_trucks > 1 {
-        location_capacities.splice(0..0, std::iter::repeat_n(0, num_of_trucks - 2));
-    }
-    debug!(
-        "Location capacities after splicing: {:?}",
-        location_capacities
-    );
+    // Do not splice dummy warehouses here; setup() already inserts them once for multi-truck runs.
+    // Double-splicing misaligns demands with location indices and shows up as 0k loads in summaries.
 
     (vehicle_cap, location_capacities)
 }
@@ -85,6 +82,41 @@ fn calculate_max_no_improvement(locations_len: usize) -> usize {
         300,
         (scaling_factor * (locations_len as f64).powf(1.33)) as usize,
     )
+}
+
+fn export_routes_to_json(
+    partition: &[(Vec<usize>, u64, u64)],
+    locations: &[String],
+    warehouse: &str,
+    output_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let routes: Vec<Vec<String>> = partition
+        .iter()
+        .map(|(indices, _, _)| {
+            let mut route = Vec::with_capacity(indices.len() + 2);
+            route.push(warehouse.to_string());
+            for idx in indices {
+                let name = locations
+                    .get(*idx)
+                    .cloned()
+                    .unwrap_or_else(|| idx.to_string());
+                route.push(name);
+            }
+            route.push(warehouse.to_string());
+            route
+        })
+        .collect();
+
+    let payload = json!({ "routes": routes });
+    let serialized = serde_json::to_string_pretty(&payload)?;
+
+    if let Some(parent) = Path::new(output_path).parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(output_path, format!("{}\n", serialized))?;
+    info!("Saved routes JSON to {}", output_path);
+
+    Ok(())
 }
 
 /// Perform a single tabu search iteration
@@ -306,10 +338,18 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 
     let google_api_key = load_google_api_key()?;
 
-    let (locations, loc_cap, vehicle_cap) = generate_random_inputs(LOCATION_COUNT, WAREHOUSE);
+    let (locations, loc_cap, vehicle_cap) = load_inputs_from_csv(LOCATION_COUNT, WAREHOUSE)?;
 
-    let num_of_trucks: usize = vehicle_cap.len();
-    let (vehicle_cap, location_capacities) = process_inputs(vehicle_cap, loc_cap, num_of_trucks);
+    let (vehicle_cap, location_capacities) = process_inputs(vehicle_cap, loc_cap);
+
+    let total_capacity: u64 = vehicle_cap.iter().sum();
+    let total_demand: u64 = location_capacities.iter().sum();
+    if total_demand > total_capacity {
+        warn!(
+            "Total demand ({}) exceeds total capacity ({}). Routes may be infeasible; penalties will apply.",
+            total_demand, total_capacity
+        );
+    }
 
     let setup_start = Instant::now();
     let (problem_instance, initial_solution) = {
@@ -401,7 +441,19 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         let truck_num = truck_idx + 1;
         let route_str = route
             .iter()
-            .map(|loc| loc.to_string())
+            .map(|loc_idx| {
+                let name = problem_instance
+                    .locations_string
+                    .get(*loc_idx)
+                    .cloned()
+                    .unwrap_or_else(|| loc_idx.to_string());
+                let demand = problem_instance
+                    .location_demands
+                    .get(*loc_idx)
+                    .copied()
+                    .unwrap_or(0);
+                format!("{} ({:.0}k)", name, demand as f64 / 1000.0)
+            })
             .collect::<Vec<_>>()
             .join(" → ");
         let percentage = (*load as f64 / *capacity as f64) * 100.0;
@@ -409,6 +461,15 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             "Truck {} (Load: {:.1}% Capacity: {}): {}",
             truck_num, percentage, capacity, route_str
         );
+    }
+
+    if let Err(err) = export_routes_to_json(
+        &partition,
+        &problem_instance.locations_string,
+        WAREHOUSE,
+        "data/routes.json",
+    ) {
+        warn!("Failed to save routes JSON: {}", err);
     }
 
     println!("\n[TIME] Total runtime: {:.2} seconds", program_elapsed);
@@ -489,11 +550,20 @@ fn partition_solution(solution: &Route, vehicle_capacity: &[u64]) -> Vec<(Vec<us
     }
     route_partition.push((temp_partition, temp_load));
 
+    // Drop empty partitions created by consecutive depots
+    route_partition.retain(|(r, _)| !r.is_empty());
     route_partition.sort_by_key(|&(_, value)| std::cmp::Reverse(value));
-    let mut partition: Vec<(Vec<usize>, u64, u64)> = vec![];
 
+    let mut partition: Vec<(Vec<usize>, u64, u64)> = vec![];
     for (ind, (r, load)) in route_partition.iter().enumerate() {
-        partition.push((r.clone(), *load, vehicle_capacity[ind]));
+        if let Some(cap) = vehicle_capacity.get(ind) {
+            partition.push((r.clone(), *load, *cap));
+        } else {
+            warn!(
+                "Skipping partition {} because no vehicle capacity is available",
+                ind
+            );
+        }
     }
     partition
 }

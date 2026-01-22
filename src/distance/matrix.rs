@@ -34,14 +34,7 @@ pub async fn create_dm(
         }
 
         "osrm" => {
-            let mut target_locations = locations;
-
-            if num_of_trucks > 1 {
-                let warehouse = target_locations[0].clone();
-                target_locations.splice(0..0, std::iter::repeat_n(warehouse, num_of_trucks - 2));
-            }
-
-            let coords = convert_to_coords(&pool, target_locations).await;
+            let coords = convert_to_coords(&pool, locations.clone()).await;
 
             if coords.len() < 2 {
                 error!("Insufficient valid coordinates for distance matrix");

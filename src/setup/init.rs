@@ -28,24 +28,31 @@ pub async fn setup(
     // Sort vehicle capacities in descending order
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
 
-    let dm = create_dm(source, pre_locations.to_vec(), num_of_trucks, api_key, pool).await;
+    // Expand locations and demands with one depot per truck (index range 0..num_of_trucks)
+    let mut locations: Vec<String> = pre_locations.to_vec();
+    let mut demands: Vec<u64> = loc_capacity.clone();
 
-    // Insert dummy warehouse demands for multi-truck scenarios
     if num_of_trucks > 1 {
-        loc_capacity.splice(0..0, std::iter::repeat_n(0, num_of_trucks - 2));
+        let warehouse = locations.get(0).cloned().expect("Missing warehouse entry");
+        let extra_depots = num_of_trucks - 1;
+
+        locations.splice(0..0, std::iter::repeat_n(warehouse, extra_depots));
+        demands.splice(0..0, std::iter::repeat_n(0, extra_depots));
     }
 
+    let dm = create_dm(source, locations.clone(), num_of_trucks, api_key, pool).await;
+
     let problem_instance = ProblemInstance {
-        locations_string: pre_locations.to_owned(),
+        locations_string: locations.clone(),
         distance_matrix: dm.clone(),
         vehicle_capacities: vehicle_cap.to_vec(),
-        location_demands: loc_capacity.clone(),
+        location_demands: demands.clone(),
         num_of_trucks: vehicle_cap.len(),
         penalty_value: penalty,
     };
 
-    // Generate and shuffle initial solution indices
-    let mut initial_solution_indices: Vec<usize> = (0..pre_locations.len()).collect();
+    // Generate and shuffle initial solution indices across expanded locations
+    let mut initial_solution_indices: Vec<usize> = (0..locations.len()).collect();
     debug!("Initial solution indices: {:?}", initial_solution_indices);
 
     let seed: u64 = 12345;
@@ -60,8 +67,8 @@ pub async fn setup(
     for ind in initial_solution_indices {
         let temp_location = Location {
             index: ind,
-            demand: loc_capacity[ind],
-            is_warehouse: ind < num_of_trucks - 1,
+            demand: demands[ind],
+            is_warehouse: ind < num_of_trucks,
         };
         route.route.push(temp_location);
     }

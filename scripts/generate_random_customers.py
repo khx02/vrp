@@ -1,6 +1,6 @@
 """
-Generate random Singapore postal codes for VRP customer locations.
-Saves them to data/customers.csv (one postal code per line, no header by default).
+Generate random Singapore postal codes for VRP customer locations, including a demand column.
+Saves them to data/customers.csv with header `postal_code,demand`.
 
 Usage:
     python scripts/generate_random_customers.py [count] [--output path]
@@ -13,6 +13,7 @@ Examples:
 import argparse
 import csv
 import json
+import random
 from pathlib import Path
 
 
@@ -56,6 +57,9 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent  # scripts/ -> repo root
     default_output = repo_root / "data" / "customers.csv"
     default_mrt = repo_root / "mrt_data.json"
+    default_seed = 64
+    default_demand_min = 450000
+    default_demand_max = 500000
 
     parser = argparse.ArgumentParser(
         description="Generate random customer postal codes for VRP",
@@ -76,24 +80,51 @@ def main() -> None:
         default=str(default_mrt.relative_to(repo_root)),
         help="Path to mrt_data.json (relative to repo root unless absolute)",
     )
+    parser.add_argument(
+        "--demand-min",
+        type=int,
+        default=default_demand_min,
+        help="Minimum customer demand value (inclusive)",
+    )
+    parser.add_argument(
+        "--demand-max",
+        type=int,
+        default=default_demand_max,
+        help="Maximum customer demand value (inclusive)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=default_seed,
+        help="Random seed for deterministic postal ordering and demand values",
+    )
 
     args = parser.parse_args()
+
+    if args.demand_min <= 0 or args.demand_max < args.demand_min:
+        raise ValueError(
+            "Invalid demand range; ensure max >= min and both are positive."
+        )
 
     mrt_path = resolve_output_path(args.mrt_path, repo_root)
     print(f"Loading up to {args.count} customer postal codes from {mrt_path}...")
     postals = load_mrt_postal_codes(mrt_path, args.count)
+
+    rng = random.Random(args.seed)
 
     output_path = resolve_output_path(args.output, repo_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        # Uncomment to add a header row:
-        # writer.writerow(["postal_code"])
+        writer.writerow(["postal_code", "demand"])
         for postal in postals:
-            writer.writerow([postal])
+            demand = rng.randint(args.demand_min, args.demand_max)
+            writer.writerow([postal, demand])
 
-    print(f"Done! Saved {len(postals)} postal codes to: {output_path}")
+    print(
+        f"Done! Saved {len(postals)} customer rows (with demand) to: {output_path} using seed {args.seed}"
+    )
 
 
 if __name__ == "__main__":
