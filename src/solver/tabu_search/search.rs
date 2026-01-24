@@ -61,16 +61,13 @@ fn load_google_api_key() -> Result<Option<String>, Box<dyn Error>> {
     }
 }
 
-/// Process input locations and capacities (sort vehicles, splice dummy warehouses)
+/// Process input locations and capacities
 fn process_inputs(
     mut vehicle_cap: Vec<u64>,
     location_capacities: Vec<u64>,
 ) -> (Vec<u64>, Vec<u64>) {
     vehicle_cap.sort_unstable_by(|a, b| b.cmp(a));
     debug!("Location capacities: {:?}", location_capacities);
-
-    // Do not splice dummy warehouses here; setup() already inserts them once for multi-truck runs.
-    // Double-splicing misaligns demands with location indices and shows up as 0k loads in summaries.
 
     (vehicle_cap, location_capacities)
 }
